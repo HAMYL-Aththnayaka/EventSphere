@@ -1,0 +1,244 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description"
+          content="Discover events, book tickets and find the perfect venue with EventSphere.">
+
+    <title>{{ page_title }}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap"
+          rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+
+<body>
+
+<header class="navbar">
+    <a href="/" class="brand">
+        <span class="brand-icon">E</span>
+        <span>Event<span class="brand-highlight">Sphere</span></span>
+    </a>
+
+    <button class="menu-toggle"
+            id="menuToggle"
+            aria-label="Open navigation menu"
+            aria-expanded="false">
+        ☰
+    </button>
+
+    <nav class="nav-links" id="navLinks">
+        <a href="#events">Discover</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#venue-hire">Venue hire</a>
+        <a href="/docs" class="nav-secondary">System API</a>
+    </nav>
+
+    <a href="#events" class="nav-cta">Explore events <span>↗</span></a>
+</header>
+
+
+<main>
+
+    <!-- HERO SECTION -->
+    <section class="hero">
+        <div class="hero-content">
+
+            <div class="eyebrow">
+                <span class="eyebrow-dot"></span>
+                YOUR NEXT EXPERIENCE STARTS HERE
+            </div>
+
+            <h1>
+                Make room for<br>
+                <span>something memorable.</span>
+            </h1>
+
+            <p class="hero-description">
+                Discover experiences, connect with your community
+                and book your next unforgettable event.
+            </p>
+
+            <div class="hero-actions">
+                <a href="#events" class="button button-primary">
+                    Discover events <span>→</span>
+                </a>
+
+                <a href="#how-it-works" class="button button-outline">
+                    How it works
+                </a>
+            </div>
+
+            <div class="hero-note">
+                <span class="note-icon">✦</span>
+                Discover. Experience. Remember.
+            </div>
+        </div>
+
+        <div class="hero-art" aria-hidden="true">
+            <div class="art-circle circle-one"></div>
+            <div class="art-circle circle-two"></div>
+
+            <div class="art-card art-card-main">
+                <div class="art-card-top">
+                    <span>THE EVENT EXPERIENCE</span>
+                    <span>✦</span>
+                </div>
+
+                <div class="art-illustration">
+                    <div class="illustration-sun"></div>
+                    <div class="illustration-shape shape-one"></div>
+                    <div class="illustration-shape shape-two"></div>
+                    <div class="illustration-shape shape-three"></div>
+                </div>
+
+                <div class="art-card-bottom">
+                    <div>
+                        <strong>Something extraordinary.</strong>
+                        <span>One platform. Endless possibilities.</span>
+                    </div>
+                    <span class="art-arrow">↗</span>
+                </div>
+            </div>
+
+            <div class="floating-label label-top">
+                <span>✦</span> Discover more
+            </div>
+
+            <div class="floating-label label-bottom">
+                <span class="label-dot"></span> Experiences await
+            </div>
+        </div>
+    </section>
+
+
+    <!-- INTRO STRIP -->
+    <section class="intro-strip">
+        <p>GOOD TIMES ARE BETTER WHEN SHARED.</p>
+        <span>Find your people. Find your event.</span>
+    </section>
+
+
+    <!-- EVENTS SECTION -->
+    <section class="section events-section" id="events">
+
+        <div class="section-heading">
+            <div>
+                <span class="section-label">FIND YOUR NEXT EXPERIENCE</span>
+                <h2>Explore what's <span>happening.</span></h2>
+                <p>From exciting gatherings to meaningful experiences.</p>
+            </div>
+
+            <span class="section-number">01 / DISCOVER</span>
+        </div>
+
+        <div class="search-panel">
+            <div class="search-icon">⌕</div>
+
+            <div class="search-copy">
+                <strong>Looking for something?</strong>
+                <span>Search for events, experiences and more.</span>
+            </div>
+
+            <a href="/docs" class="button button-dark">
+                Browse events <span>→</span>
+            </a>
+        </div>
+
+        <div class="empty-events">
+            <div class="empty-icon">✦</div>
+            <h3>Something exciting is on its way.</h3>
+            <p>
+                Event listings will appear here once events are published.
+                Check back soon to discover your next experience.
+            </p>
+        </div>
+
+    </section>
+
+
+    <!-- HOW IT WORKS -->
+    <section class="section how-section" id="how-it-works">
+
+        <div class="section-heading">
+            <div>
+                <span class="section-label">SIMPLE BY DESIGN</span>
+                <h2>Good experiences.<br><span>Made simple.</span></h2>
+            </div>
+
+            <span class="section-number">02 / THE PROCESS</span>
+        </div>
+
+        <div class="steps-grid">
+
+            <article class="step-card">
+                <span class="step-number">01</span>
+                <div class="step-icon">⌕</div>
+                <h3>Discover</h3>
+                <p>Explore published events and find experiences that interest you.</p>
+            </article>
+
+            <article class="step-card">
+                <span class="step-number">02</span>
+                <div class="step-icon">↗</div>
+                <h3>Book</h3>
+                <p>Choose your tickets and complete your booking through the platform.</p>
+            </article>
+
+            <article class="step-card">
+                <span class="step-number">03</span>
+                <div class="step-icon">✦</div>
+                <h3>Experience</h3>
+                <p>Bring your ticket and enjoy the event. Your experience starts here.</p>
+            </article>
+
+        </div>
+    </section>
+
+
+    <!-- VENUE HIRE -->
+    <section class="venue-section" id="venue-hire">
+        <div class="venue-content">
+            <span class="section-label">HAVE SOMETHING IN MIND?</span>
+            <h2>Every great event<br>needs the <span>right place.</span></h2>
+            <p>
+                Planning a private event? Explore venue-hire opportunities
+                and submit a request through EventSphere.
+            </p>
+            <a href="/docs" class="button button-light">
+                Explore venue services <span>↗</span>
+            </a>
+        </div>
+
+        <div class="venue-decoration" aria-hidden="true">
+            <span>✳</span>
+        </div>
+    </section>
+
+</main>
+
+
+<footer class="footer">
+    <a href="/" class="brand footer-brand">
+        <span class="brand-icon">E</span>
+        <span>Event<span class="brand-highlight">Sphere</span></span>
+    </a>
+
+    <p>Making meaningful experiences easier to discover.</p>
+
+    <div class="footer-bottom">
+        <span>© <span id="currentYear"></span> EventSphere</span>
+        <span>Discover. Experience. Remember.</span>
+    </div>
+</footer>
+
+<script src="{{ url_for('static', path='/js/app.js') }}"></script>
+
+</body>
+</html>
