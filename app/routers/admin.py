@@ -3,6 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.auth import require_roles
 from app.database import get_db
@@ -32,6 +33,9 @@ def create_venue(
     location: str,
     capacity: int,
     hourly_rate: float,
+    description: str = "",
+    image: str = "",
+    private_hire: bool = True,
     current_user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db)
 ):
@@ -49,9 +53,9 @@ def create_venue(
         location=location,
         capacity=capacity,
         hourly_rate=hourly_rate,
-        description="",
-        image="",
-        private_hire=True
+        description=description,
+        image=image,
+        private_hire=private_hire
     )
 
     db.add(venue)
@@ -79,6 +83,18 @@ def get_events(
             .filter(TicketCategory.event_id == event.id)
             .all()
         )
+        ticket_data = []
+        for ticket in ticket_categories:
+            sold = db.query(Booking).filter(
+                Booking.category_id == ticket.id,
+                Booking.status == "confirmed"
+            ).with_entities(func.sum(Booking.quantity)).scalar() or 0
+            ticket_data.append({
+                "id": ticket.id,
+                "name": ticket.name,
+                "price": ticket.price,
+                "quantity": ticket.quantity + sold
+            })
 
         result.append({
             "id": event.id,
@@ -95,15 +111,7 @@ def get_events(
             ),
             "description": event.description,
             "status": event.status,
-            "ticket_categories": [
-                {
-                    "id": ticket.id,
-                    "name": ticket.name,
-                    "price": ticket.price,
-                    "quantity": ticket.quantity
-                }
-                for ticket in ticket_categories
-            ]
+            "ticket_categories": ticket_data
         })
 
     return result
@@ -135,6 +143,23 @@ def update_venue(
 
     if capacity <= 0 or hourly_rate < 0:
         raise HTTPException(400, "Invalid venue details.")
+
+    for event in db.query(Event).filter(Event.venue_id == venue_id).all():
+        event_capacity = 0
+        categories = db.query(TicketCategory).filter(
+            TicketCategory.event_id == event.id
+        ).all()
+        for category in categories:
+            sold = db.query(func.sum(Booking.quantity)).filter(
+                Booking.category_id == category.id,
+                Booking.status == "confirmed"
+            ).scalar() or 0
+            event_capacity += category.quantity + sold
+        if event_capacity > capacity:
+            raise HTTPException(
+                400,
+                f"Venue capacity cannot be below the {event_capacity} tickets allocated to event '{event.title}'."
+            )
 
     venue.name = name
     venue.location = location
@@ -168,6 +193,7 @@ def create_event(
     ticket_name: str,
     price: float,
     quantity: int,
+    status: str = "published",
     current_user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db)
 ):
@@ -185,13 +211,21 @@ def create_event(
     if end <= start:
         raise HTTPException(400, "Invalid event time.")
 
+    if status not in ["draft", "published"]:
+        raise HTTPException(400, "New events can only be saved as draft or published.")
+
     if quantity <= 0 or quantity > venue.capacity or price < 0:
         raise HTTPException(400, "Invalid ticket quantity or price.")
 
-    system = AgentSystem(db)
-    decision = system.check_venue(venue_id, start, end)
-
-    decision_content = decision.get("content", {})
+    decision_content = {}
+    if status == "published":
+        decision = AgentSystem(db).check_venue(venue_id, start, end)
+        decision_content = decision.get("content", {})
+        if decision.get("performative") != "AGREE":
+            raise HTTPException(
+                409,
+                decision_content.get("reason", "Venue is unavailable.")
+            )
 
     event = Event(
         title=title,
@@ -200,11 +234,7 @@ def create_event(
         start_time=start,
         end_time=end,
         description=description,
-        status=(
-            "published"
-            if decision.get("performative") == "AGREE"
-            else "draft"
-        )
+        status=status
     )
 
     try:
@@ -323,7 +353,7 @@ def update_event(
 
     ticket.name = ticket_name
     ticket.price = price
-    ticket.quantity = quantity
+    ticket.quantity = quantity - sold
 
     try:
         db.commit()
@@ -361,12 +391,15 @@ def update_event_status(
         if not venue:
             raise HTTPException(404, "Event venue not found.")
 
-        total_capacity = sum(
-            category.quantity
-            for category in db.query(TicketCategory).filter(
-                TicketCategory.event_id == event.id
-            ).all()
-        )
+        total_capacity = 0
+        for category in db.query(TicketCategory).filter(
+            TicketCategory.event_id == event.id
+        ).all():
+            sold = db.query(func.sum(Booking.quantity)).filter(
+                Booking.category_id == category.id,
+                Booking.status == "confirmed"
+            ).scalar() or 0
+            total_capacity += category.quantity + sold
 
         if total_capacity <= 0 or total_capacity > venue.capacity:
             raise HTTPException(
@@ -389,6 +422,17 @@ def update_event_status(
                 "Venue is unavailable."
             )
             raise HTTPException(409, reason)
+
+    if status == "cancelled" and event.status != "cancelled":
+        cancellation = AgentSystem(db).cancel_event(event.id)
+        if cancellation.get("performative") != "INFORM":
+            raise HTTPException(
+                500,
+                cancellation.get("content", {}).get(
+                    "reason",
+                    "Could not cancel the event bookings."
+                )
+            )
 
     event.status = status
     db.commit()
@@ -447,7 +491,8 @@ def decide_hire_request(
         availability = system.check_venue(
             hire.venue_id,
             hire.start_time,
-            hire.end_time
+            hire.end_time,
+            exclude_hire_id=hire.id
         )
 
         if availability.get("performative") != "AGREE":
@@ -460,6 +505,20 @@ def decide_hire_request(
         hire.status = "confirmed"
 
     db.commit()
+
+    notification = AgentSystem(db).notify(
+        hire.user_id,
+        (
+            "Your venue hire request was approved."
+            if hire.status == "confirmed"
+            else "Your venue hire request was rejected."
+        )
+    )
+    if notification.get("performative") != "AGREE":
+        raise HTTPException(
+            500,
+            "The hire decision was saved, but its notification could not be delivered."
+        )
 
     return {
         "message": "Hire request decision saved.",

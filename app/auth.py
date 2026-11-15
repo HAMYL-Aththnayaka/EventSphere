@@ -9,6 +9,11 @@ from app.security import hash_password, verify_password
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+@router.get("/csrf")
+def get_csrf_token(request: Request):
+    return {"csrf_token": request.session["csrf_token"]}
+
+
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
@@ -26,7 +31,10 @@ def get_current_user(
     user = db.get(User, user_id)
 
     if not user:
+        csrf_token = request.session.get("csrf_token")
         request.session.clear()
+        if csrf_token:
+            request.session["csrf_token"] = csrf_token
         raise HTTPException(
             status_code=401,
             detail="User session is invalid."
@@ -122,8 +130,9 @@ def login(
             detail="Incorrect email or password."
         )
 
-    # Clear any previous session before creating a new one.
+    csrf_token = request.session["csrf_token"]
     request.session.clear()
+    request.session["csrf_token"] = csrf_token
     request.session["user_id"] = user.id
 
     return {
@@ -139,7 +148,9 @@ def login(
 
 @router.post("/logout")
 def logout(request: Request):
+    csrf_token = request.session["csrf_token"]
     request.session.clear()
+    request.session["csrf_token"] = csrf_token
 
     return {"message": "Logged out successfully."}
 

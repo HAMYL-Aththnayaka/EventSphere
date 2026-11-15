@@ -4,13 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import update
 
-from app.models import (
-    Booking,
-    Ticket,
-    TicketCategory,
-    Event,
-    Waitlist
-)
+from app.models import Booking, TicketCategory, Event, Waitlist
 
 
 class BookingAgent:
@@ -22,6 +16,19 @@ class BookingAgent:
             return {
                 "performative": "REFUSE",
                 "reason": "Maximum 6 tickets per booking."
+            }
+
+        event = self.db.get(Event, event_id)
+        if not event or event.status != "published":
+            return {
+                "performative": "REFUSE",
+                "reason": "This event is not available for booking."
+            }
+
+        if event.end_time <= datetime.utcnow():
+            return {
+                "performative": "REFUSE",
+                "reason": "Ticket sales have closed because the event has ended."
             }
 
         category = self.db.query(TicketCategory).filter(
@@ -183,29 +190,38 @@ class BookingAgent:
             }
 
         try:
-            booking.status = "cancelled"
-
-            # Refund eligibility and seat availability are separate rules.
             if event.start_time > datetime.utcnow() + timedelta(hours=24):
                 refund = booking.total
             else:
                 refund = 0
 
-            # Always release the seats when a confirmed booking is cancelled.
-            category = self.db.get(
-                TicketCategory,
-                booking.category_id
+            result = self.db.execute(
+                update(Booking)
+                .where(
+                    Booking.id == booking_id,
+                    Booking.user_id == user_id,
+                    Booking.status == "confirmed"
+                )
+                .values(
+                    status="cancelled",
+                    refund_amount=refund
+                )
             )
 
-            if category:
-                category.quantity += booking.quantity
+            if result.rowcount == 0:
+                self.db.rollback()
+                return {
+                    "performative": "REFUSE",
+                    "content": {"reason": "This booking is no longer active."}
+                }
 
-            tickets = self.db.query(Ticket).filter(
-                Ticket.booking_id == booking.id
-            ).all()
-
-            for ticket in tickets:
-                ticket.status = "cancelled"
+            self.db.execute(
+                update(TicketCategory)
+                .where(TicketCategory.id == booking.category_id)
+                .values(
+                    quantity=TicketCategory.quantity + booking.quantity
+                )
+            )
 
             self.db.commit()
 
@@ -216,7 +232,7 @@ class BookingAgent:
                     "event_id": booking.event_id,
                     "category_id": booking.category_id,
                     "quantity": booking.quantity,
-                    "status": booking.status,
+                    "status": "cancelled",
                     "refund": refund,
                     "message": (
                         "Booking cancelled. Full refund approved."
@@ -226,6 +242,56 @@ class BookingAgent:
                 }
             }
 
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def cancel_event(self, event_id):
+        bookings = self.db.query(Booking).filter(
+            Booking.event_id == event_id,
+            Booking.status == "confirmed"
+        ).all()
+        cancelled = []
+
+        try:
+            for booking in bookings:
+                result = self.db.execute(
+                    update(Booking)
+                    .where(
+                        Booking.id == booking.id,
+                        Booking.status == "confirmed"
+                    )
+                    .values(
+                        status="cancelled",
+                        refund_amount=booking.total
+                    )
+                )
+
+                if result.rowcount == 0:
+                    continue
+
+                self.db.execute(
+                    update(TicketCategory)
+                    .where(TicketCategory.id == booking.category_id)
+                    .values(
+                        quantity=TicketCategory.quantity + booking.quantity
+                    )
+                )
+
+                cancelled.append({
+                    "booking_id": booking.id,
+                    "user_id": booking.user_id,
+                    "event_id": booking.event_id,
+                    "category_id": booking.category_id,
+                    "quantity": booking.quantity,
+                    "refund": booking.total
+                })
+
+            self.db.commit()
+            return {
+                "performative": "INFORM",
+                "content": {"cancelled_bookings": cancelled}
+            }
         except Exception:
             self.db.rollback()
             raise
@@ -247,6 +313,9 @@ class BookingAgent:
                 booking_id=content.get("booking_id"),
                 user_id=content.get("user_id")
             )
+
+        if action == "CANCEL_EVENT":
+            return self.cancel_event(content.get("event_id"))
 
         if action == "BOOK_WAITLIST_OFFER":
             return self.book_waitlist_offer(

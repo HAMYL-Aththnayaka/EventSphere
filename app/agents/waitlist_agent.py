@@ -130,13 +130,11 @@ class WaitlistAgent:
                 self.db.rollback()
                 return False, "This offer is no longer active."
 
-            category = self.db.get(
-                TicketCategory,
-                entry.category_id
+            self.db.execute(
+                update(TicketCategory)
+                .where(TicketCategory.id == entry.category_id)
+                .values(quantity=TicketCategory.quantity + 1)
             )
-
-            if category:
-                category.quantity += 1
 
             self.db.commit()
 
@@ -171,13 +169,11 @@ class WaitlistAgent:
                 if result.rowcount == 0:
                     continue
 
-                category = self.db.get(
-                    TicketCategory,
-                    entry.category_id
+                self.db.execute(
+                    update(TicketCategory)
+                    .where(TicketCategory.id == entry.category_id)
+                    .values(quantity=TicketCategory.quantity + 1)
                 )
-
-                if category:
-                    category.quantity += 1
 
                 expired.append({
                     "waitlist_id": entry.id,
@@ -248,7 +244,8 @@ class WaitlistAgent:
                     "user_id": entry.user_id,
                     "event_id": entry.event_id,
                     "category_id": entry.category_id,
-                    "hold_until": entry.hold_until.isoformat()
+                    "hold_until": entry.hold_until.isoformat(),
+                    "reason": "A released seat is reserved for the next person in line."
                 }
             }
 

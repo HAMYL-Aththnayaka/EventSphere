@@ -6,7 +6,12 @@
     <div><span class="section-label">PRIVATE VENUE REQUEST</span><h2>Find your <span>place.</span></h2><p>Request a venue for your next private event.</p></div>
   </div>
   <form id="hireForm" class="stack-form">
-    <label class="form-field"><span>Venue ID</span><input name="venue_id" id="hireVenue" type="number" min="1" required placeholder="Enter the venue ID"></label>
+    <label class="form-field">
+      <span>Venue</span>
+      <select name="venue_id" id="hireVenue" required>
+        <option value="">Loading venues...</option>
+      </select>
+    </label>
     <div class="form-row">
       <label class="form-field"><span>Start date & time</span><input name="start_time" type="datetime-local" required></label>
       <label class="form-field"><span>End date & time</span><input name="end_time" type="datetime-local" required></label>

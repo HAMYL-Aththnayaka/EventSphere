@@ -15,6 +15,7 @@ from app.models import (
     Booking,
     Ticket,
     Waitlist,
+    VenueHire,
     Notification,
     AgentMessage
 )
@@ -267,6 +268,30 @@ def test_waitlist_prevents_duplicate_entries(db, event_data):
     assert db.query(Waitlist).count() == 1
 
 
+def test_waitlist_agent_expiry_sweep_releases_held_seat(db, event_data):
+    data = event_data
+    data["category"].quantity = 9
+    entry = Waitlist(
+        user_id=data["user"].id,
+        event_id=data["event"].id,
+        category_id=data["category"].id,
+        status="offered",
+        hold_until=datetime.utcnow() - timedelta(minutes=1)
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    response = AgentSystem(db).expire_waitlist_holds()
+
+    db.refresh(entry)
+    db.refresh(data["category"])
+    assert response["performative"] == "INFORM"
+    assert response["content"]["expired_count"] == 1
+    assert entry.status == "expired"
+    assert data["category"].quantity == 10
+
+
 def test_venue_agent_detects_conflict(db, event_data):
     data = event_data
     system = AgentSystem(db)
@@ -309,3 +334,84 @@ def test_agent_messages_are_logged(db, event_data):
     assert len(messages) >= 2
     assert any(message.receiver == "WaitlistAgent" for message in messages)
     assert any(message.sender == "WaitlistAgent" for message in messages)
+
+
+def test_notification_agent_handles_broadcast_inform(db, event_data):
+    data = event_data
+    response = AgentSystem(db).notify(
+        data["user"].id,
+        "A required account notification."
+    )
+
+    assert response["performative"] == "AGREE"
+    notification = db.query(Notification).one()
+    assert notification.user_id == data["user"].id
+    assert notification.message == "A required account notification."
+
+
+def test_venue_agent_proposes_hire_alternatives(db, event_data):
+    data = event_data
+    response = AgentSystem(db).check_hire(
+        data["venue"].id,
+        data["event"].start_time,
+        data["event"].end_time,
+        guests=20
+    )
+
+    assert response["performative"] == "PROPOSE"
+    assert response["content"]["reason"]
+    assert response["content"]["alternatives"]
+    assert response["content"]["alternatives"][0]["start_time"]
+
+
+def test_venue_agent_ignores_hire_being_reviewed(db, event_data):
+    data = event_data
+    data["event"].status = "cancelled"
+    hire = VenueHire(
+        user_id=data["user"].id,
+        venue_id=data["venue"].id,
+        start_time=data["event"].start_time,
+        end_time=data["event"].end_time,
+        purpose="Review test",
+        guests=10,
+        price=1000,
+        status="pending_admin"
+    )
+    db.add(hire)
+    db.commit()
+    db.refresh(hire)
+
+    response = AgentSystem(db).check_venue(
+        data["venue"].id,
+        hire.start_time,
+        hire.end_time,
+        exclude_hire_id=hire.id
+    )
+
+    assert response["performative"] == "AGREE"
+
+
+def test_event_cancellation_fully_refunds_and_invalidates_tickets(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+    booking_response = system.book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        2
+    )
+    booking_id = booking_response["content"]["booking"]["booking_id"]
+
+    response = system.cancel_event(data["event"].id)
+
+    booking = db.get(Booking, booking_id)
+    tickets = db.query(Ticket).filter(Ticket.booking_id == booking_id).all()
+    db.refresh(data["category"])
+
+    assert response["performative"] == "INFORM"
+    assert booking.status == "cancelled"
+    assert booking.refund_amount == booking.total
+    assert data["category"].quantity == 10
+    assert len(tickets) == 2
+    assert all(ticket.status == "cancelled" for ticket in tickets)
+    assert db.query(Notification).count() == 2

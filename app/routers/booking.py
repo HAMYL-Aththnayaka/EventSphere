@@ -42,18 +42,23 @@ def create_booking(
     )
 
     if result["performative"] != "AGREE":
+        reason = result.get("content", {}).get(
+            "reason",
+            "Booking could not be completed."
+        )
         raise HTTPException(
-            status_code=400,
-            detail=result["content"]
+            status_code=(
+                500
+                if result["performative"] == "FAILURE"
+                else 400
+            ),
+            detail=reason
         )
 
     ticket_details = []
 
     for ticket in result["content"]["tickets"]:
-        qr_url = generate_qr(
-            ticket["code"],
-            ticket["ticket_id"]
-        )
+        qr_url = generate_qr(ticket["code"])
 
         ticket_details.append({
             "ticket_id": ticket["ticket_id"],
@@ -93,13 +98,14 @@ def booking_history(
             "event_title": event.title if event else "Event unavailable",
             "quantity": booking.quantity,
             "total": booking.total,
+            "refund_amount": booking.refund_amount,
             "payment_reference": booking.payment_reference,
             "status": booking.status,
             "tickets": [
             {
                     "ticket_id": ticket.id,
                     "ticket_code": ticket.code,
-                    "qr_code": generate_qr(ticket.code, ticket.id),
+                    "qr_code": generate_qr(ticket.code),
                     "status": ticket.status,
                     "checked_in": ticket.checked_in
                 }

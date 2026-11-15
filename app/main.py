@@ -1,12 +1,19 @@
 
+import asyncio
+import logging
 import os
+import secrets
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.csrf import CSRFMiddleware
+from app.database import SessionLocal, initialize_database
+from app.init import create_admin_from_environment
 from app.routers import (
     booking,
     admin,
@@ -21,30 +28,67 @@ from app.auth import require_roles
 
 
 BASE_DIR = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(
     directory=str(BASE_DIR / "templates")
 )
 
+
+async def waitlist_expiry_scheduler():
+    while True:
+        db = SessionLocal()
+        try:
+            from app.agents.agent_system import AgentSystem
+            AgentSystem(db).expire_waitlist_holds()
+        except Exception:
+            logger.exception("Waitlist expiry sweep failed.")
+        finally:
+            db.close()
+        await asyncio.sleep(30)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    initialize_database()
+    create_admin_from_environment()
+    scheduler = asyncio.create_task(waitlist_expiry_scheduler())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
+        try:
+            await scheduler
+        except asyncio.CancelledError:
+            pass
+
+
+if os.getenv("APP_ENV", "development").lower() == "production" and not os.getenv("SECRET_KEY"):
+    raise RuntimeError("SECRET_KEY must be configured in production.")
+
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+
 app = FastAPI(
     title="EventSphere",
     description="Agent-Based Venue Booking and Ticketing System",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
 # SESSION CONFIGURATION
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "development-only-change-this-secret-key",
-)
+# SessionMiddleware wraps CSRF middleware so the session is available there.
+app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
     session_cookie="eventsphere_session",
     same_site="lax",
-    https_only=os.getenv("HTTPS_ONLY", "false").lower() == "true",
+    https_only=os.getenv(
+        "HTTPS_ONLY",
+        "true" if os.getenv("APP_ENV", "development").lower() == "production" else "false"
+    ).lower() == "true",
 )
 
 

@@ -1,7 +1,7 @@
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
@@ -59,3 +59,23 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def initialize_database():
+    Base.metadata.create_all(bind=engine)
+
+    inspector = inspect(engine)
+    if "bookings" in inspector.get_table_names():
+        columns = {
+            column["name"]
+            for column in inspector.get_columns("bookings")
+        }
+
+        if "refund_amount" not in columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE bookings "
+                        "ADD COLUMN refund_amount FLOAT NOT NULL DEFAULT 0"
+                    )
+                )

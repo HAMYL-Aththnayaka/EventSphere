@@ -33,6 +33,12 @@
       <input name="capacity" type="number" min="1" placeholder="Capacity" required>
       <input name="hourly_rate" type="number" min="0" step="0.01"
              placeholder="Hourly rate (LKR)" required>
+      <textarea name="description" placeholder="Venue description"></textarea>
+      <input name="image" placeholder="Image URL (optional)">
+      <label>
+        <input name="private_hire" type="checkbox" checked>
+        Available for private hire
+      </label>
       <button class="button button-primary" type="submit">Create venue</button>
     </form>
 
@@ -61,6 +67,10 @@
              placeholder="Ticket quantity" required>
 
       <textarea name="description" placeholder="Event description" required></textarea>
+      <select name="status" required>
+        <option value="published">Publish now</option>
+        <option value="draft">Save as draft</option>
+      </select>
 
       <button class="button button-primary" type="submit">Create event</button>
     </form>
@@ -105,12 +115,16 @@
           <th>Tickets sold</th>
           <th>Revenue</th>
           <th>Check-ins</th>
+          <th>Capacity</th>
           <th>Remaining</th>
         </tr>
       </thead>
       <tbody id="dashboardEvents"></tbody>
     </table>
   </div>
+
+  <h3 class="subheading">Venue hire requests</h3>
+  <div id="adminHireList"></div>
 
   <h3 class="subheading">Recent agent messages</h3>
   <div class="agent-log" id="agentLogs"></div>

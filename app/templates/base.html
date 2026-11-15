@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Discover events, book tickets and find the perfect venue with EventSphere.">
   <meta name="theme-color" content="#17263c">
+  <meta name="csrf-token" content="{{ request.session.get('csrf_token', '') }}">
 
   <title>{% block title %}{{ page_title or "EventSphere | Discover. Experience. Remember." }}{% endblock %}</title>
 

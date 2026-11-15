@@ -59,6 +59,7 @@ class Booking(Base):
     category_id = Column(Integer, ForeignKey("ticket_categories.id"))
     quantity = Column(Integer)
     total = Column(Float)
+    refund_amount = Column(Float, default=0, nullable=False)
     payment_reference = Column(String(100))
     status = Column(String(30), default="confirmed")
 

@@ -3,7 +3,7 @@
 {% block content %}
 <section class="section scanner-section">
   <div class="section-heading">
-    <div><span class="section-label">EVENT ENTRY</span><h2>Ticket <span>scanner.</span></h2><p>Enter a ticket code manually to validate entry.</p></div>
+    <div><span class="section-label">EVENT ENTRY</span><h2>Ticket <span>scanner.</span></h2><p>Scan the ticket QR code or enter its code manually.</p></div>
   </div>
   <form id="scanForm" class="inline-form">
     <label class="form-field grow">
@@ -16,6 +16,14 @@
     </label>
     <button class="button button-primary" type="submit">Validate ticket</button>
   </form>
+  <div class="form-actions">
+    <button class="button button-outline" id="startCameraScan" type="button">Start camera scanner</button>
+    <button class="button button-outline" id="stopCameraScan" type="button" disabled>Stop camera</button>
+  </div>
+  <div id="qrReader" aria-label="Camera QR scanner"></div>
   <div id="scanResult" class="status-message" role="status"></div>
 </section>
+{% endblock %}
+{% block extra_scripts %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 {% endblock %}

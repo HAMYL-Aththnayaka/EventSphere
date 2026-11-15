@@ -1,7 +1,7 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,13 +12,31 @@ from app.agents.agent_system import AgentSystem
 router = APIRouter(prefix="/hire", tags=["Venue Hire"])
 
 
+@router.get("/venues")
+def available_venues(db: Session = Depends(get_db)):
+    venues = db.query(Venue).filter(
+        Venue.private_hire.is_(True)
+    ).order_by(Venue.name.asc()).all()
+
+    return [
+        {
+            "id": venue.id,
+            "name": venue.name,
+            "location": venue.location,
+            "capacity": venue.capacity,
+            "hourly_rate": venue.hourly_rate
+        }
+        for venue in venues
+    ]
+
+
 @router.post("/request")
 def request_hire(
-    venue_id: int,
-    start_time: str,
-    end_time: str,
-    purpose: str,
-    guests: int,
+    venue_id: int = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    purpose: str = Form(...),
+    guests: int = Form(...),
     current_user: User = Depends(require_roles("attendee")),
     db: Session = Depends(get_db)
 ):
@@ -36,6 +54,13 @@ def request_hire(
     if end <= start or guests <= 0:
         raise HTTPException(400, "Invalid hire request.")
 
+    if start <= datetime.utcnow():
+        raise HTTPException(400, "Venue hire must start in the future.")
+
+    purpose = purpose.strip()
+    if not purpose:
+        raise HTTPException(400, "Please provide a purpose for the hire.")
+
     if guests > venue.capacity:
         raise HTTPException(400, "Guest count exceeds venue capacity.")
 
@@ -44,10 +69,11 @@ def request_hire(
 
     system = AgentSystem(db)
 
-    decision = system.check_venue(
+    decision = system.check_hire(
         venue_id,
         start,
-        end
+        end,
+        guests
     )
 
     decision_content = decision.get("content", {})
@@ -61,11 +87,7 @@ def request_hire(
         hours = (end - start).total_seconds() / 3600
         price = hours * venue.hourly_rate
 
-    status = (
-        "confirmed"
-        if decision["performative"] == "AGREE"
-        else "pending_admin"
-    )
+    status = "confirmed" if decision["performative"] == "AGREE" else "pending_admin"
 
     hire = VenueHire(
         user_id=current_user.id,
@@ -86,13 +108,33 @@ def request_hire(
         db.rollback()
         raise HTTPException(500, "Could not save venue hire request.")
 
+    notification = system.notify(
+        current_user.id,
+        (
+            "Your venue hire request was confirmed."
+            if status == "confirmed"
+            else "Your venue hire request needs admin review. "
+            "Review the proposed alternatives in the request response."
+        )
+    )
+    if notification.get("performative") != "AGREE":
+        raise HTTPException(
+            500,
+            "The hire request was saved, but its notification could not be delivered."
+        )
+
     return {
         "hire_id": hire.id,
         "status": status,
         "price": price,
+        "message": (
+            "Your venue hire was confirmed automatically."
+            if status == "confirmed"
+            else "Your request needs admin review. The system proposes alternatives."
+        ),
         "reason": decision_content.get(
             "reason",
             "Request processed."
         ),
-        "alternatives": []
+        "alternatives": decision_content.get("alternatives", [])
     }

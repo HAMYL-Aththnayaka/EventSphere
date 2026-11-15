@@ -116,6 +116,28 @@ class TicketAgent:
             "reason": "Valid ticket"
         }
 
+    def cancel_booking_tickets(self, booking_id):
+        try:
+            self.db.execute(
+                update(Ticket)
+                .where(
+                    Ticket.booking_id == booking_id,
+                    Ticket.status != "cancelled"
+                )
+                .values(
+                    checked_in=False,
+                    status="cancelled"
+                )
+            )
+            self.db.commit()
+            return {
+                "performative": "INFORM",
+                "content": {"booking_id": booking_id, "status": "cancelled"}
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
     def handle_message(self, agent_message):
         if agent_message["performative"] != "REQUEST":
             return {
@@ -171,6 +193,15 @@ class TicketAgent:
                 ),
                 "content": result
             }
+
+        if action == "CANCEL_BOOKING_TICKETS":
+            booking_id = content.get("booking_id")
+            if not booking_id:
+                return {
+                    "performative": "REFUSE",
+                    "content": {"reason": "Booking ID is required."}
+                }
+            return self.cancel_booking_tickets(booking_id)
 
         return {
             "performative": "REFUSE",

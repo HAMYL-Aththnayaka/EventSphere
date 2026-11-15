@@ -39,7 +39,11 @@ def scan_ticket(
 
         if not response or response.get("performative") == "FAILURE":
             raise HTTPException(
-                status_code=400,
+                status_code=(
+                    500
+                    if response.get("performative") == "FAILURE"
+                    else 400
+                ),
                 detail=response.get("content", "Ticket validation failed.")
                 if response else "No response from TicketAgent."
             )

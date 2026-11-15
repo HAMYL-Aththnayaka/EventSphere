@@ -30,23 +30,39 @@ class NotificationAgent:
 
         content = agent_message["content"]
 
-        user_id = content.get("user_id")
-        message = content.get("message")
+        notifications = content.get("notifications")
+        if notifications is None:
+            notifications = [{
+                "user_id": content.get("user_id"),
+                "message": content.get("message")
+            }]
 
-        if not user_id or not message:
+        if not notifications or any(
+            not item.get("user_id") or not item.get("message")
+            for item in notifications
+        ):
             return {
                 "performative": "REFUSE",
                 "content": {
-                    "reason": "user_id and message are required."
+                    "reason": "Each notification requires a user_id and message."
                 }
             }
 
-        self.notify(user_id, message)
+        try:
+            for item in notifications:
+                self.db.add(Notification(
+                    user_id=item["user_id"],
+                    message=item["message"]
+                ))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         return {
             "performative": "AGREE",
             "content": {
-                "message": "Notification saved successfully.",
-                "user_id": user_id
+                "message": "Notification(s) saved successfully.",
+                "count": len(notifications)
             }
         }

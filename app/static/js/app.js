@@ -71,9 +71,18 @@ function setStatus(element, message, type = "") {
 }
 
 async function api(url, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+  if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method) && csrfToken) {
+    headers.set("X-CSRF-Token", csrfToken);
+  }
+
   const response = await fetch(url, {
     credentials: "same-origin",
-    ...options
+    ...options,
+    headers
   });
 
   const contentType = response.headers.get("content-type") || "";
@@ -437,6 +446,7 @@ function renderEvents() {
       <option value="${Number(category.id)}">
         ${escapeHTML(category.name || "General admission")}
         · ${money(category.price)}
+        · ${Number(category.available ?? category.quantity ?? 0)} left
       </option>
     `).join("");
 
@@ -624,6 +634,11 @@ async function loadBookings() {
                 ${Number(booking.quantity || tickets.length)} ticket(s)
                 · ${money(booking.total)}
                 · ${escapeHTML(booking.status || "unknown")}
+                ${
+                  String(booking.status).toLowerCase() === "cancelled"
+                    ? `· Refund ${money(booking.refund_amount)}`
+                    : ""
+                }
               </p>
 
                 ${tickets.map(ticket => `
@@ -922,11 +937,17 @@ $("#hireForm")?.addEventListener("submit", async event => {
       body: formBody(form)
     });
 
+    const alternatives = (result.alternatives || []).map(alternative =>
+      `${alternative.venue_name} · ${dateText(alternative.start_time)} · ${money(alternative.price)}`
+    );
     setStatus(
       $("#hireStatus"),
-      result.message ||
-        `Request submitted. Status: ${result.status || "received"}.`,
-      "success"
+      [
+        result.message || `Request submitted. Status: ${result.status || "received"}.`,
+        result.reason,
+        ...alternatives.map(item => `Alternative: ${item}`)
+      ].filter(Boolean).join(" "),
+      result.status === "confirmed" ? "success" : ""
     );
 
     form.reset();
@@ -935,6 +956,26 @@ $("#hireForm")?.addEventListener("submit", async event => {
     setStatus($("#hireStatus"), error.message, "error");
   }
 });
+
+async function loadHireVenues() {
+  const select = $("#hireVenue");
+  if (!select) return;
+
+  try {
+    const venues = await api("/hire/venues");
+    select.innerHTML = '<option value="">Select a venue</option>' +
+      venues.map(venue => `
+        <option value="${Number(venue.id)}">
+          ${escapeHTML(venue.name)} · ${escapeHTML(venue.location)}
+          · capacity ${Number(venue.capacity)}
+          · ${money(venue.hourly_rate)}/hour
+        </option>
+      `).join("");
+  } catch (error) {
+    select.innerHTML = '<option value="">Could not load venues</option>';
+    setStatus($("#hireStatus"), error.message, "error");
+  }
+}
 
 // =====================================================
 // ADMIN DASHBOARD
@@ -983,10 +1024,11 @@ async function loadDashboard() {
           <td>${Number(item.tickets_sold || 0)}</td>
           <td>${money(item.revenue)}</td>
           <td>${Number(item.checkins || 0)}</td>
+          <td>${Number(item.capacity || 0)}</td>
           <td>${Number(item.remaining_capacity ?? 0)}</td>
         </tr>
       `).join("") || `
-        <tr><td colspan="5">No event data available.</td></tr>
+        <tr><td colspan="6">No event data available.</td></tr>
       `;
     }
 
@@ -1009,9 +1051,12 @@ async function loadDashboard() {
                 : JSON.stringify(log.content || {})
             )}
           </code>
+          <small>Conversation: ${escapeHTML(log.conversation_id)}</small>
         </article>
       `).join("") || "<p>No agent messages recorded yet.</p>";
     }
+
+    await loadAdminHires();
 
     setStatus(
       $("#dashboardStatus"),
@@ -1026,26 +1071,63 @@ async function loadDashboard() {
 
 $("#refreshDashboardBtn")?.addEventListener("click", loadDashboard);
 
+async function loadAdminHires() {
+  const container = $("#adminHireList");
+  if (!container) return;
+
+  const hires = await api("/admin/hires");
+  container.innerHTML = hires.map(hire => `
+    <article class="log-row">
+      <div>
+        <strong>${escapeHTML(hire.purpose)}</strong>
+        <span>${escapeHTML(hire.status)} · ${dateText(hire.start_time)} - ${dateText(hire.end_time)}</span>
+      </div>
+      <p>${Number(hire.guests)} guests · ${money(hire.price)}</p>
+      ${
+        hire.status === "pending_admin"
+          ? `<div class="form-actions">
+              <button class="button button-primary" data-hire-decision="approve" data-hire-id="${Number(hire.id)}">Approve</button>
+              <button class="button button-outline" data-hire-decision="reject" data-hire-id="${Number(hire.id)}">Reject</button>
+            </div>`
+          : ""
+      }
+    </article>
+  `).join("") || "<p>No venue hire requests.</p>";
+
+  if (!container.dataset.decisionHandlerAttached) {
+    container.addEventListener("click", async event => {
+      const button = event.target.closest("[data-hire-decision]");
+      if (!button) return;
+      try {
+        const params = new URLSearchParams({
+          decision: button.dataset.hireDecision
+        });
+        await api(
+          `/admin/hire/${button.dataset.hireId}/decision?${params}`,
+          { method: "POST" }
+        );
+        await loadAdminHires();
+      } catch (error) {
+        setStatus($("#dashboardStatus"), error.message, "error");
+      }
+    });
+    container.dataset.decisionHandlerAttached = "true";
+  }
+}
+
 // =====================================================
 // TICKET SCANNER
 // =====================================================
 
-$("#scanForm")?.addEventListener("submit", async event => {
-  event.preventDefault();
-
+async function validateScannedTicket(code, eventId) {
   if (!state.user || !["staff", "admin"].includes(state.user.role)) {
     setStatus(
       $("#scanResult"),
       "Staff or admin login is required.",
       "error"
     );
-    return;
+    return false;
   }
-
-  const form = event.currentTarget;
-
-  const code = $("#ticketCode")?.value.trim();
-  const eventId = $("#scanEventId")?.value;
 
   if (!code || !eventId) {
     setStatus(
@@ -1053,7 +1135,7 @@ $("#scanForm")?.addEventListener("submit", async event => {
       "Enter both the ticket code and event ID.",
       "error"
     );
-    return;
+    return false;
   }
 
   const params = new URLSearchParams({
@@ -1067,12 +1149,11 @@ $("#scanForm")?.addEventListener("submit", async event => {
       { method: "POST" }
     );
 
-    const message = typeof result === "string"
-      ? result
-      : result.message || JSON.stringify(result);
+    const message = result.reason || result.message || JSON.stringify(result);
 
     const rejected =
       result?.success === false ||
+      String(result?.result || "").toUpperCase() === "REJECTED" ||
       ["FAILURE", "REFUSE", "REJECTED", "INVALID"].includes(
         String(result?.status || result?.performative || "").toUpperCase()
       );
@@ -1083,11 +1164,70 @@ $("#scanForm")?.addEventListener("submit", async event => {
       rejected ? "error" : "success"
     );
 
-    if (!rejected) form.reset();
+    return !rejected;
 
   } catch (error) {
     setStatus($("#scanResult"), error.message, "error");
+    return false;
   }
+}
+
+$("#scanForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const code = $("#ticketCode")?.value.trim();
+  const eventId = $("#scanEventId")?.value;
+  await validateScannedTicket(code, eventId);
+});
+
+let qrScanner = null;
+let scannerBusy = false;
+$("#startCameraScan")?.addEventListener("click", async () => {
+  if (!$("#scanEventId")?.value) {
+    setStatus($("#scanResult"), "Enter the event ID before starting the camera.", "error");
+    return;
+  }
+  if (!window.Html5Qrcode) {
+    setStatus($("#scanResult"), "The camera scanner could not be loaded. Use manual code entry.", "error");
+    return;
+  }
+
+  try {
+    qrScanner = new Html5Qrcode("qrReader");
+    await qrScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 240, height: 240 } },
+      async decodedText => {
+        if (scannerBusy) return;
+        scannerBusy = true;
+        $("#ticketCode").value = decodedText;
+        try {
+          const admitted = await validateScannedTicket(
+            decodedText,
+            $("#scanEventId").value
+          );
+          if (admitted && qrScanner.isScanning) {
+            await qrScanner.stop();
+            $("#startCameraScan").disabled = false;
+            $("#stopCameraScan").disabled = true;
+          }
+        } finally {
+          scannerBusy = false;
+        }
+      }
+    );
+    $("#startCameraScan").disabled = true;
+    $("#stopCameraScan").disabled = false;
+  } catch (error) {
+    setStatus($("#scanResult"), `Could not start camera: ${error.message}`, "error");
+  }
+});
+
+$("#stopCameraScan")?.addEventListener("click", async () => {
+  if (qrScanner?.isScanning) {
+    await qrScanner.stop();
+  }
+  $("#startCameraScan").disabled = false;
+  $("#stopCameraScan").disabled = true;
 });
 
 // =====================================================
@@ -1101,6 +1241,9 @@ if ($("#currentYear")) {
 // Load events only on the events page.
 if ($("#eventsGrid")) {
   loadEvents();
+}
+if ($("#hireVenue")) {
+  loadHireVenues();
 }
 
 // Check authentication on every page.

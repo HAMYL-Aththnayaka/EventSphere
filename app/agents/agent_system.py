@@ -25,17 +25,20 @@ class AgentSystem:
         self.bus.register("NotificationAgent", self.notification_agent.handle_message)
         self.bus.register("VenueAgent", self.venue_agent.handle_message)
         self.bus.register("WaitlistAgent", self.waitlist_agent.handle_message)
+        self.bus.subscribe("NotificationAgent")
 
     def notify(self, user_id, message):
-        return self.bus.communicate(
+        responses = self.bus.broadcast_inform(
             sender="EventSphere",
-            receiver="NotificationAgent",
-            performative="INFORM",
             content={
                 "user_id": user_id,
                 "message": message
             }
         )
+        return responses[0] if responses else {
+            "performative": "FAILURE",
+            "content": {"reason": "No notification listeners are available."}
+        }
 
     def book_tickets(self, user_id, event_id, category_id, quantity):
         booking_response = self.bus.communicate(
@@ -72,6 +75,8 @@ class AgentSystem:
             user_id,
             "Your ticket booking has been confirmed."
         )
+        if notification_response["performative"] != "AGREE":
+            return notification_response
 
         return {
             "performative": "AGREE",
@@ -97,16 +102,83 @@ class AgentSystem:
         if response["performative"] == "INFORM":
             result = response.get("content", {})
 
-            self.notify(
+            ticket_response = self.bus.communicate(
+                sender="BookingAgent",
+                receiver="TicketAgent",
+                performative="REQUEST",
+                content={
+                    "action": "CANCEL_BOOKING_TICKETS",
+                    "booking_id": booking_id
+                }
+            )
+            if ticket_response["performative"] != "INFORM":
+                return ticket_response
+
+            notification = self.notify(
                 user_id,
                 result.get("message", "Your booking has been cancelled.")
             )
+            if notification["performative"] != "AGREE":
+                return notification
 
             # Offer each released seat to the next person in the queue.
             for _ in range(int(result.get("quantity", 0))):
                 self.offer_waitlist_seat(
                     result["event_id"],
                     result["category_id"]
+                )
+
+        return response
+
+    def cancel_event(self, event_id):
+        response = self.bus.communicate(
+            sender="EventSphere",
+            receiver="BookingAgent",
+            performative="REQUEST",
+            content={"action": "CANCEL_EVENT", "event_id": event_id}
+        )
+
+        if response["performative"] != "INFORM":
+            return response
+
+        cancelled = response.get("content", {}).get("cancelled_bookings", [])
+        for booking in cancelled:
+            ticket_response = self.bus.communicate(
+                sender="BookingAgent",
+                receiver="TicketAgent",
+                performative="REQUEST",
+                content={
+                    "action": "CANCEL_BOOKING_TICKETS",
+                    "booking_id": booking["booking_id"]
+                }
+            )
+            if ticket_response["performative"] != "INFORM":
+                return ticket_response
+
+        notifications = [
+            {
+                "user_id": booking["user_id"],
+                "message": (
+                    "The event was cancelled. Your booking was cancelled "
+                    f"and a full refund of {booking['refund']:.2f} was approved."
+                )
+            }
+            for booking in cancelled
+        ]
+        if notifications:
+            notification_response = self.bus.broadcast_inform(
+                sender="BookingAgent",
+                content={"notifications": notifications},
+                conversation_id=response["conversation_id"]
+            )
+            if any(
+                item["performative"] != "AGREE"
+                for item in notification_response
+            ):
+                return next(
+                    item
+                    for item in notification_response
+                    if item["performative"] != "AGREE"
                 )
 
         return response
@@ -141,11 +213,13 @@ class AgentSystem:
             event = self.db.get(Event, event_id)
             event_name = event.title if event else "the event"
 
-            self.notify(
+            notification = self.notify(
                 offer["user_id"],
                 f"A ticket is available for {event_name}. "
                 f"You have 10 minutes to accept your waitlist offer."
             )
+            if notification["performative"] != "AGREE":
+                return notification
 
         return response
 
@@ -179,10 +253,12 @@ class AgentSystem:
         if ticket_response["performative"] != "AGREE":
             return ticket_response
 
-        self.notify(
+        notification = self.notify(
             user_id,
             "Your waitlist offer was accepted. Your ticket booking is confirmed."
         )
+        if notification["performative"] != "AGREE":
+            return notification
 
         return {
             "performative": "AGREE",
@@ -239,7 +315,8 @@ class AgentSystem:
         venue_id,
         start,
         end,
-        exclude_event_id=None
+        exclude_event_id=None,
+        exclude_hire_id=None
     ):
         content = {
             "action": "CHECK_VENUE",
@@ -250,10 +327,26 @@ class AgentSystem:
 
         if exclude_event_id is not None:
             content["exclude_event_id"] = exclude_event_id
+        if exclude_hire_id is not None:
+            content["exclude_hire_id"] = exclude_hire_id
 
         return self.bus.communicate(
             sender="EventSphere",
             receiver="VenueAgent",
             performative="REQUEST",
             content=content
+        )
+
+    def check_hire(self, venue_id, start, end, guests):
+        return self.bus.communicate(
+            sender="EventSphere",
+            receiver="VenueAgent",
+            performative="REQUEST",
+            content={
+                "action": "CHECK_HIRE",
+                "venue_id": venue_id,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "guests": guests
+            }
         )

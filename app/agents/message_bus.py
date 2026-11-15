@@ -18,10 +18,29 @@ class MessageBus:
     def __init__(self, db):
         self.db = db
         self.handlers = {}
+        self.listeners = set()
 
     def register(self, agent_name, handler):
         """Register an agent's message handler."""
         self.handlers[agent_name] = handler
+
+    def subscribe(self, agent_name):
+        if agent_name not in self.handlers:
+            raise ValueError(f"Agent '{agent_name}' is not registered.")
+        self.listeners.add(agent_name)
+
+    def broadcast_inform(self, sender, content, conversation_id=None):
+        conversation_id = conversation_id or str(uuid.uuid4())
+        return [
+            self.communicate(
+                sender=sender,
+                receiver=listener,
+                performative="INFORM",
+                content=content,
+                conversation_id=conversation_id
+            )
+            for listener in sorted(self.listeners)
+        ]
 
     def send(
         self,
