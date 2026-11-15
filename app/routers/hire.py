@@ -33,7 +33,7 @@ def request_hire(
 
     agent = VenueAgent(db)
 
-    price = agent.calculate_price(venue, start_time, end_time)
+    price = agent.calculate_price(venue, start, end)
 
     available = agent.check_venue(venue_id, start, end)
 
