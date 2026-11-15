@@ -12,8 +12,9 @@ Requires Python 3.11 or newer.
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:ADMIN_EMAIL = "admin@example.com"
-$env:ADMIN_PASSWORD = "choose-a-password-of-at-least-8-characters"
+Copy-Item .env.example .env
+# Edit .env and set a private SECRET_KEY. Optionally set ADMIN_EMAIL and
+# ADMIN_PASSWORD to create the first admin account.
 python -m app.init
 python -m uvicorn app.main:app --reload
 ```
@@ -30,7 +31,8 @@ development database defaults to `eventsphere.db`.
    `uvicorn app.main:app --host 0.0.0.0 --port $PORT` as the start command.
 4. Create a PostgreSQL database in the same region and set `DATABASE_URL` on
    the web service to its internal connection URL. Check Render's current plan
-   and billing terms before creating resources.
+   and billing terms before creating resources. Production startup requires
+   this URL to point to PostgreSQL; it will not silently use SQLite.
 5. Add `APP_ENV=production`, `HTTPS_ONLY=true`, a strong private `SECRET_KEY`,
    `ADMIN_EMAIL`, and `ADMIN_PASSWORD` in the service's environment settings.
    Do not add these values to Git.
@@ -50,8 +52,11 @@ development database defaults to `eventsphere.db`.
 | `APP_ENV` | Set to `production` for deployment. |
 | `HTTPS_ONLY` | Set to `true` when the site is served over HTTPS. |
 
-Never commit production secrets. Set the variables in the cloud host's secret
-configuration. The initial admin is created from `ADMIN_EMAIL` and
+`.env.example` provides local-development defaults. Copy it to `.env` and edit
+the local values; `.env` is ignored by Git. Render does not read repository
+`.env` files, so configure production values in the Render service's
+environment settings. Never commit production secrets. The initial admin is
+created from `ADMIN_EMAIL` and
 `ADMIN_PASSWORD`; admins can then create staff accounts. Attendees register
 through the site.
 

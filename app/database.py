@@ -1,33 +1,54 @@
 
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-# Use PostgreSQL when DATABASE_URL is configured.
-# Otherwise, use SQLite for local development.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./eventsphere.db"
-)
-
-# Use the psycopg 3 driver included in requirements.txt.
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace(
-        "postgres://",
-        "postgresql+psycopg://",
-        1
-    )
-elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace(
-        "postgresql://",
-        "postgresql+psycopg://",
-        1
-    )
+load_dotenv()
 
 
-# SQLitespecial connection argument.
+def _normalize_database_url(database_url):
+    if database_url.startswith("postgres://"):
+        return database_url.replace(
+            "postgres://",
+            "postgresql+psycopg://",
+            1
+        )
+    if database_url.startswith("postgresql://"):
+        return database_url.replace(
+            "postgresql://",
+            "postgresql+psycopg://",
+            1
+        )
+    return database_url
+
+
+def _database_url_from_environment():
+    app_env = os.getenv("APP_ENV", "development").lower()
+    database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        if app_env == "production":
+            raise RuntimeError(
+                "DATABASE_URL must be configured with a PostgreSQL connection "
+                "URL in production."
+            )
+        return "sqlite:///./eventsphere.db"
+
+    database_url = _normalize_database_url(database_url)
+    if app_env == "production" and not database_url.startswith(
+        "postgresql+psycopg://"
+    ):
+        raise RuntimeError(
+            "Production requires DATABASE_URL to use PostgreSQL."
+        )
+    return database_url
+
+
+DATABASE_URL = _database_url_from_environment()
+
 connect_args = {}
 
 if DATABASE_URL.startswith("sqlite"):
