@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -17,6 +17,7 @@ from app.routers import (
     events,
 )
 from app import auth
+from app.auth import require_roles
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,7 +25,6 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(
     directory=str(BASE_DIR / "templates")
 )
-
 
 app = FastAPI(
     title="EventSphere",
@@ -112,7 +112,10 @@ async def venue_hire_page(request: Request):
     )
 
 
-@app.get("/dashboard")
+@app.get(
+    "/dashboard",
+    dependencies=[Depends(require_roles("admin"))]
+)
 async def dashboard_page(request: Request):
     return templates.TemplateResponse(
         request=request,
@@ -123,7 +126,10 @@ async def dashboard_page(request: Request):
     )
 
 
-@app.get("/scanner-page")
+@app.get(
+    "/scanner-page",
+    dependencies=[Depends(require_roles("staff", "admin"))]
+)
 async def scanner_page(request: Request):
     return templates.TemplateResponse(
         request=request,

@@ -198,3 +198,123 @@ td { color:var(--text); }
 }
 @media(max-width:375px) { .stats-grid { grid-template-columns:1fr; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
+
+/* =========================================
+   ADMIN EVENT & VENUE MANAGEMENT
+========================================= */
+
+.admin-management {
+  margin: 35px 0;
+  padding: 28px;
+  background: var(--surface, #ffffff);
+  border: 1px solid rgba(120, 140, 160, 0.2);
+  border-radius: 16px;
+}
+
+.admin-management h3 {
+  margin: 28px 0 16px;
+  font-size: 1.25rem;
+  color: var(--text, #17263c);
+}
+
+.admin-management h3:first-child {
+  margin-top: 0;
+}
+
+.admin-management .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+  margin-bottom: 16px;
+}
+
+.admin-management input,
+.admin-management select,
+.admin-management textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid #d5dce5;
+  border-radius: 9px;
+  background: #fff;
+  color: #17263c;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-management input:focus,
+.admin-management select:focus,
+.admin-management textarea:focus {
+  border-color: #3978bd;
+  box-shadow: 0 0 0 3px rgba(57, 120, 189, 0.12);
+}
+
+.admin-management textarea {
+  grid-column: 1 / -1;
+  min-height: 110px;
+  resize: vertical;
+}
+
+.admin-management .button {
+  justify-self: start;
+  min-height: 44px;
+}
+
+.admin-management #adminEventList {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-management #adminEventList .log-row {
+  padding: 18px;
+  border: 1px solid #e1e6ed;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-management #adminEventList .log-row strong {
+  font-size: 1.05rem;
+  color: #17263c;
+}
+
+.admin-management #adminEventList .log-row span {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.admin-management #adminEventList .form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.admin-management .status-message {
+  margin: 10px 0 20px;
+}
+
+@media (max-width: 650px) {
+  .admin-management {
+    padding: 18px;
+  }
+
+  .admin-management .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-management textarea {
+    grid-column: auto;
+  }
+
+  .admin-management .button {
+    width: 100%;
+  }
+
+  .admin-management #adminEventList .form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}

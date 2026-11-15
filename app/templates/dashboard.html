@@ -1,20 +1,117 @@
-
 {% extends "base.html" %}
 {% block content %}
 <section class="section admin-section">
   <div class="section-heading">
-    <div><span class="section-label">EVENT OPERATIONS</span><h2>Management <span>overview.</span></h2><p>Live figures and recent agent communication records.</p></div>
-    <button class="button button-outline" id="refreshDashboardBtn">Refresh dashboard ↻</button>
+    <div>
+      <span class="section-label">EVENT OPERATIONS</span>
+      <h2>Management <span>overview.</span></h2>
+      <p>Live figures and recent agent communication records.</p>
+    </div>
+    <button class="button button-outline" id="refreshDashboardBtn">
+      Refresh dashboard
+    </button>
   </div>
+
   <div id="dashboardStatus" class="status-message" role="status"></div>
+
+  <!-- ADMIN CONTROLS -->
+  <div class="section-heading">
+    <div>
+      <span class="section-label">ADMIN CONTROLS</span>
+      <h2>Manage <span>events.</span></h2>
+      <p>Create events, configure tickets and manage venues.</p>
+    </div>
+  </div>
+
+  <div class="admin-management">
+
+    <!-- VENUE MANAGEMENT -->
+    <h3>Create venue</h3>
+    <form id="createVenueForm" class="form-grid">
+      <input name="name" placeholder="Venue name" required>
+      <input name="location" placeholder="Venue location" required>
+      <input name="capacity" type="number" min="1" placeholder="Capacity" required>
+      <input name="hourly_rate" type="number" min="0" step="0.01"
+             placeholder="Hourly rate (LKR)" required>
+      <button class="button button-primary" type="submit">Create venue</button>
+    </form>
+
+    <div id="venueFormStatus" class="status-message" role="status"></div>
+
+    <h3>Manage existing venues</h3>
+    <div id="adminVenueList"></div>
+
+    <!-- EVENT MANAGEMENT -->
+    <h3>Create event</h3>
+    <form id="createEventForm" class="form-grid">
+      <input name="title" placeholder="Event title" required>
+      <input name="category" placeholder="Category" required>
+
+      <select name="venue_id" id="eventVenue" required>
+        <option value="">Select venue</option>
+      </select>
+
+      <input name="start_time" type="datetime-local" required>
+      <input name="end_time" type="datetime-local" required>
+
+      <input name="ticket_name" placeholder="Ticket category name" required>
+      <input name="price" type="number" min="0" step="0.01"
+             placeholder="Ticket price (LKR)" required>
+      <input name="quantity" type="number" min="1"
+             placeholder="Ticket quantity" required>
+
+      <textarea name="description" placeholder="Event description" required></textarea>
+
+      <button class="button button-primary" type="submit">Create event</button>
+    </form>
+
+    <div id="eventFormStatus" class="status-message" role="status"></div>
+
+    <h3>Manage existing events</h3>
+    <div id="adminEventList"></div>
+
+    <!-- STAFF MANAGEMENT -->
+    <h3>Staff account management</h3>
+    <p>Create staff accounts for authorised event check-in personnel.</p>
+
+    <form id="createStaffForm" class="form-grid">
+      <input name="name" placeholder="Staff member name" required maxlength="100">
+      <input name="email" type="email" placeholder="Staff email address" required>
+      <input name="password" type="password"
+             placeholder="Temporary password (minimum 8 characters)"
+             minlength="8" required>
+
+      <button class="button button-primary" type="submit">
+        Create staff account
+      </button>
+    </form>
+
+    <div id="staffFormStatus" class="status-message" role="status"></div>
+
+    <h3>Registered staff</h3>
+    <div id="adminStaffList"></div>
+
+  </div>
+
+  <!-- DASHBOARD STATISTICS -->
   <div class="stats-grid" id="dashboardStats"></div>
+
   <h3 class="subheading">Event performance</h3>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Event</th><th>Tickets sold</th><th>Revenue</th><th>Check-ins</th><th>Remaining</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>Tickets sold</th>
+          <th>Revenue</th>
+          <th>Check-ins</th>
+          <th>Remaining</th>
+        </tr>
+      </thead>
       <tbody id="dashboardEvents"></tbody>
     </table>
   </div>
+
   <h3 class="subheading">Recent agent messages</h3>
   <div class="agent-log" id="agentLogs"></div>
 </section>

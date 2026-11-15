@@ -152,6 +152,7 @@ async function refreshUser() {
 
   if (loggedIn && role === "attendee" && $("#bookingsList")) {
     await loadBookings();
+    await loadWaitlist();
   }
 
   if (loggedIn && role === "admin" && $("#dashboardStats")) {
@@ -739,10 +740,156 @@ async function joinWaitlist(eventId) {
       body
     });
 
-    showToast(result.message || "Joined the waitlist.");
+   showToast(result.message || "Joined the waitlist.");
+   await loadWaitlist();
 
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+
+async function loadWaitlist() {
+  const container = $("#myWaitlistList");
+  if (!container) return;
+
+  try {
+    const data = await api("/waitlist/my");
+    const entries = data.waitlist || [];
+
+    if (!entries.length) {
+      container.innerHTML = `
+        <div class="empty-events">
+          <h3>No waitlist entries.</h3>
+          <p>When an event is sold out, you can join its waitlist.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = entries.map(entry => {
+      const status = String(entry.status || "").toLowerCase();
+      const offered = status === "offered";
+
+      return `
+        <article class="booking-card">
+          <div>
+            <span class="booking-id">WAITLIST #${Number(entry.id)}</span>
+
+            <h3>${escapeHTML(entry.event_title)}</h3>
+
+            <p>
+              Ticket: ${escapeHTML(entry.category_name)}
+            </p>
+
+            <p>
+              Status:
+              <strong>${escapeHTML(status.toUpperCase())}</strong>
+            </p>
+
+            ${
+              offered
+                ? `
+                  <p class="form-hint">
+                    Offer expires:
+                    ${escapeHTML(dateText(entry.hold_until))}
+                  </p>
+
+                  <div class="form-actions">
+                    <button
+                      class="button button-primary"
+                      data-waitlist-accept="${Number(entry.id)}"
+                    >
+                      Accept offer
+                    </button>
+
+                    <button
+                      class="button button-outline"
+                      data-waitlist-decline="${Number(entry.id)}"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                `
+                : ""
+            }
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    setStatus(
+      $("#waitlistStatus"),
+      "Waitlist information loaded.",
+      "success"
+    );
+
+  } catch (error) {
+    setStatus(
+      $("#waitlistStatus"),
+      error.message,
+      "error"
+    );
+  }
+}
+
+$("#myWaitlistList")?.addEventListener("click", async event => {
+  const accept = event.target.closest("[data-waitlist-accept]");
+  const decline = event.target.closest("[data-waitlist-decline]");
+
+  if (accept) {
+    await acceptWaitlistOffer(
+      Number(accept.dataset.waitlistAccept)
+    );
+  }
+
+  if (decline) {
+    await declineWaitlistOffer(
+      Number(decline.dataset.waitlistDecline)
+    );
+  }
+});
+
+async function acceptWaitlistOffer(id) {
+  if (!confirm("Accept this ticket offer and confirm your booking?")) {
+    return;
+  }
+
+  try {
+    const result = await api(
+      `/waitlist/${id}/accept`,
+      { method: "POST" }
+    );
+
+    showToast(result.message || "Waitlist offer accepted.");
+
+    await loadWaitlist();
+    await loadBookings();
+
+  } catch (error) {
+    showToast(error.message, "error");
+    await loadWaitlist();
+  }
+}
+
+async function declineWaitlistOffer(id) {
+  if (!confirm("Are you sure you want to decline this ticket offer?")) {
+    return;
+  }
+
+  try {
+    const result = await api(
+      `/waitlist/${id}/decline`,
+      { method: "POST" }
+    );
+
+    showToast(result.message || "Offer declined.");
+
+    await loadWaitlist();
+
+  } catch (error) {
+    showToast(error.message, "error");
+    await loadWaitlist();
   }
 }
 
@@ -832,7 +979,7 @@ async function loadDashboard() {
     if ($("#dashboardEvents")) {
       $("#dashboardEvents").innerHTML = events.map(item => `
         <tr>
-          <td>${escapeHTML(item.title)}</td>
+          <td>${escapeHTML(item.event)}</td>
           <td>${Number(item.tickets_sold || 0)}</td>
           <td>${money(item.revenue)}</td>
           <td>${Number(item.checkins || 0)}</td>
@@ -958,3 +1105,486 @@ if ($("#eventsGrid")) {
 
 // Check authentication on every page.
 refreshUser();
+// =====================================================
+// ADMIN EVENT AND VENUE MANAGEMENT
+// =====================================================
+
+
+
+async function loadAdminVenues() {
+  const select = $("#eventVenue");
+  const list = $("#adminVenueList");
+
+  try {
+    const venues = await api("/admin/venues");
+
+    // Update the venue dropdown used when creating events
+    if (select) {
+      select.innerHTML = `
+        <option value="">Select venue</option>
+        ${venues.map(venue => `
+          <option value="${venue.id}">
+            ${escapeHTML(venue.name)} (${escapeHTML(venue.location)})
+          </option>
+        `).join("")}
+      `;
+    }
+
+    // Display existing venues with editable details
+    if (list) {
+      list.innerHTML = venues.map(venue => `
+        <form class="admin-management venue-edit-form"
+              data-venue-id="${venue.id}">
+
+          <h4>${escapeHTML(venue.name)}</h4>
+
+          <input
+            name="name"
+            value="${escapeHTML(venue.name)}"
+            placeholder="Venue name"
+            required
+          >
+
+          <input
+            name="location"
+            value="${escapeHTML(venue.location)}"
+            placeholder="Location"
+            required
+          >
+
+          <input
+            name="capacity"
+            type="number"
+            min="1"
+            value="${Number(venue.capacity)}"
+            placeholder="Capacity"
+            required
+          >
+
+          <input
+            name="hourly_rate"
+            type="number"
+            min="0"
+            step="0.01"
+            value="${Number(venue.hourly_rate)}"
+            placeholder="Hourly rate"
+            required
+          >
+
+          <textarea
+            name="description"
+            placeholder="Description"
+          >${escapeHTML(venue.description || "")}</textarea>
+
+          <input
+            name="image"
+            value="${escapeHTML(venue.image || "")}"
+            placeholder="Image URL"
+          >
+
+          <label>
+            <input
+              name="private_hire"
+              type="checkbox"
+              ${venue.private_hire ? "checked" : ""}
+            >
+            Available for private hire
+          </label>
+
+          <button class="button button-primary" type="submit">
+            Save changes
+          </button>
+
+        </form>
+      `).join("");
+
+      // Handle venue editing
+      if (!list.dataset.editHandlerAttached) {
+        list.addEventListener("submit", async event => {
+          const form = event.target.closest(".venue-edit-form");
+
+          if (!form) return;
+
+          event.preventDefault();
+
+          const venueId = form.dataset.venueId;
+
+          try {
+            const params = new URLSearchParams(new FormData(form));
+
+            // Include false when the checkbox is unchecked
+            params.set(
+              "private_hire",
+              form.elements.private_hire.checked ? "true" : "false"
+            );
+
+            const result = await api(
+              `/admin/venue/${venueId}?${params.toString()}`,
+              { method: "PUT" }
+            );
+
+            setStatus(
+              $("#venueFormStatus"),
+              result.message,
+              "success"
+            );
+
+            await loadAdminVenues();
+
+          } catch (error) {
+            setStatus(
+              $("#venueFormStatus"),
+              error.message,
+              "error"
+            );
+          }
+        });
+
+        list.dataset.editHandlerAttached = "true";
+      }
+    }
+
+  } catch (error) {
+    setStatus($("#venueFormStatus"), error.message, "error");
+  }
+}
+
+
+
+async function loadAdminEvents() {
+  const container = $("#adminEventList");
+  if (!container) return;
+
+  try {
+    const [events, venues] = await Promise.all([
+      api("/admin/events"),
+      api("/admin/venues")
+    ]);
+
+    container.innerHTML = events.map(event => {
+      const ticket = event.ticket_categories?.[0] || {};
+
+      const venueOptions = venues.map(venue => `
+        <option
+          value="${Number(venue.id)}"
+          ${Number(venue.id) === Number(event.venue_id) ? "selected" : ""}
+        >
+          ${escapeHTML(venue.name)}
+        </option>
+      `).join("");
+
+      return `
+        <article class="log-row admin-event-item">
+
+          <strong>${escapeHTML(event.title)}</strong>
+          <span>Status: ${escapeHTML(event.status)}</span>
+
+          <details class="event-edit-details">
+            <summary>Edit event details</summary>
+
+            <form class="admin-management event-edit-form"
+                  data-event-edit="${Number(event.id)}">
+
+              <label>Event title</label>
+              <input
+                name="title"
+                value="${escapeHTML(event.title)}"
+                required
+              >
+
+              <label>Category</label>
+              <input
+                name="category"
+                value="${escapeHTML(event.category)}"
+                required
+              >
+
+              <label>Venue</label>
+              <select name="venue_id" required>
+                ${venueOptions}
+              </select>
+
+              <label>Start time</label>
+              <input
+                type="datetime-local"
+                name="start_time"
+                value="${escapeHTML(String(event.start_time || "").slice(0, 16))}"
+                required
+              >
+
+              <label>End time</label>
+              <input
+                type="datetime-local"
+                name="end_time"
+                value="${escapeHTML(String(event.end_time || "").slice(0, 16))}"
+                required
+              >
+
+              <label>Description</label>
+              <textarea name="description">${escapeHTML(event.description || "")}</textarea>
+
+              <hr>
+
+              <h4>Ticket category</h4>
+
+              <label>Ticket name</label>
+              <input
+                name="ticket_name"
+                value="${escapeHTML(ticket.name || "")}"
+                required
+              >
+
+              <label>Ticket price (LKR)</label>
+              <input
+                type="number"
+                name="price"
+                min="0"
+                step="0.01"
+                value="${Number(ticket.price || 0)}"
+                required
+              >
+
+              <label>Total ticket quantity</label>
+              <input
+                type="number"
+                name="quantity"
+                min="1"
+                value="${Number(ticket.quantity || 1)}"
+                required
+              >
+
+              <button class="button button-primary" type="submit">
+                Save event changes
+              </button>
+
+            </form>
+          </details>
+
+          <div class="form-actions">
+
+            <button
+              class="button button-outline"
+              type="button"
+              data-event-id="${Number(event.id)}"
+              data-event-status="published"
+            >Publish</button>
+
+            <button
+              class="button button-outline"
+              type="button"
+              data-event-id="${Number(event.id)}"
+              data-event-status="draft"
+            >Set draft</button>
+
+            <button
+              class="button button-outline"
+              type="button"
+              data-event-id="${Number(event.id)}"
+              data-event-status="cancelled"
+            >Cancel</button>
+
+          </div>
+
+        </article>
+      `;
+    }).join("") || "<p>No events created yet.</p>";
+
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
+function setupAdminManagement() {
+  const venueForm = $("#createVenueForm");
+  const eventForm = $("#createEventForm");
+  const eventList = $("#adminEventList");
+
+  if (!venueForm || !eventForm) return;
+
+  loadAdminVenues();
+  loadAdminEvents();
+
+  // Create venue
+  venueForm.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    try {
+      const params = new URLSearchParams(new FormData(venueForm));
+
+      params.set(
+        "private_hire",
+        venueForm.elements.private_hire?.checked ? "true" : "false"
+      );
+
+      const result = await api(`/admin/venue?${params}`, {
+        method: "POST"
+      });
+
+      setStatus($("#venueFormStatus"), result.message, "success");
+
+      venueForm.reset();
+
+      await loadAdminVenues();
+      await loadAdminEvents();
+
+    } catch (error) {
+      setStatus($("#venueFormStatus"), error.message, "error");
+    }
+  });
+
+  // Create event
+  eventForm.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    try {
+      const params = new URLSearchParams(new FormData(eventForm));
+
+      const result = await api(`/admin/event?${params}`, {
+        method: "POST"
+      });
+
+      setStatus(
+        $("#eventFormStatus"),
+        `${result.message}. Status: ${result.status}`,
+        "success"
+      );
+
+      eventForm.reset();
+
+      await loadAdminEvents();
+      await loadDashboard();
+
+    } catch (error) {
+      setStatus($("#eventFormStatus"), error.message, "error");
+    }
+  });
+
+  if (!eventList) return;
+
+  // Save edited event
+  eventList.addEventListener("submit", async event => {
+    const form = event.target.closest(".event-edit-form");
+
+    if (!form) return;
+
+    event.preventDefault();
+
+    try {
+      const eventId = form.dataset.eventEdit;
+      const params = new URLSearchParams(new FormData(form));
+
+      const result = await api(
+        `/admin/event/${eventId}?${params}`,
+        { method: "PUT" }
+      );
+
+      setStatus(
+        $("#eventFormStatus"),
+        result.message || "Event updated successfully.",
+        "success"
+      );
+
+      await loadAdminEvents();
+      await loadDashboard();
+
+    } catch (error) {
+      setStatus($("#eventFormStatus"), error.message, "error");
+    }
+  });
+
+  // Publish, draft or cancel event
+  eventList.addEventListener("click", async event => {
+    const button = event.target.closest("[data-event-status]");
+
+    if (!button) return;
+
+    try {
+      const id = button.dataset.eventId;
+      const status = button.dataset.eventStatus;
+
+      const params = new URLSearchParams({ status });
+
+      const result = await api(
+        `/admin/event/${id}/status?${params}`,
+        { method: "POST" }
+      );
+
+      setStatus(
+        $("#eventFormStatus"),
+        result.message,
+        "success"
+      );
+
+      await loadAdminEvents();
+      await loadDashboard();
+
+    } catch (error) {
+      setStatus($("#eventFormStatus"), error.message, "error");
+    }
+  });
+}
+async function loadAdminStaff() {
+  const container = $("#adminStaffList");
+  if (!container) return;
+
+  try {
+    const staff = await api("/admin/staff");
+
+    if (!staff.length) {
+      container.innerHTML = "<p>No staff accounts have been created yet.</p>";
+      return;
+    }
+
+    container.innerHTML = staff.map(member => `
+      <div class="admin-list-item">
+        <div>
+          <strong>${escapeHTML(member.name)}</strong>
+          <p>${escapeHTML(member.email)}</p>
+          <small>Role: ${escapeHTML(member.role)}</small>
+        </div>
+      </div>
+    `).join("");
+  } catch (error) {
+    container.innerHTML = "<p>Could not load staff accounts.</p>";
+  }
+}
+
+function setupStaffManagement() {
+  const form = $("#createStaffForm");
+  if (!form || form.dataset.handlerAttached) return;
+
+  form.dataset.handlerAttached = "true";
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const status = $("#staffFormStatus");
+    const formData = new FormData(form);
+
+    const params = new URLSearchParams({
+      name: formData.get("name").trim(),
+      email: formData.get("email").trim(),
+      password: formData.get("password")
+    });
+
+    try {
+      const result = await api(`/admin/staff?${params}`, {
+        method: "POST"
+      });
+
+      status.textContent = result.message || "Staff account created.";
+      status.className = "status-message success";
+
+      form.reset();
+      await loadAdminStaff();
+
+    } catch (error) {
+      status.textContent = error.message || "Could not create staff account.";
+      status.className = "status-message error";
+    }
+  });
+}
+
+setupStaffManagement();
+loadAdminStaff();
+setupAdminManagement();

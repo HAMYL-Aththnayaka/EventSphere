@@ -1,11 +1,30 @@
 
 {% extends "base.html" %}
+
 {% block content %}
 <section class="section account-section">
+
   <div class="section-heading">
-    <div><span class="section-label">YOUR EVENT HISTORY</span><h2>Your <span>bookings.</span></h2><p>Review your tickets and manage eligible bookings.</p></div>
+    <div>
+      <span class="section-label">YOUR EVENT HISTORY</span>
+      <h2>Your <span>bookings.</span></h2>
+      <p>Review your tickets and manage eligible bookings.</p>
+    </div>
   </div>
+
   <div id="bookingStatus" class="status-message" role="status"></div>
   <div id="bookingsList" class="booking-list"></div>
+
+  <div class="section-heading" style="margin-top: 55px;">
+    <div>
+      <span class="section-label">TICKET AVAILABILITY</span>
+      <h2>Your <span>waitlist.</span></h2>
+      <p>Track your queue and manage available ticket offers.</p>
+    </div>
+  </div>
+
+  <div id="waitlistStatus" class="status-message" role="status"></div>
+  <div id="myWaitlistList" class="booking-list"></div>
+
 </section>
 {% endblock %}

@@ -42,7 +42,7 @@ def dashboard(
         ).count()
 
         result.append({
-            "event": event.title,
+            "title": event.title,
             "tickets_sold": sold,
             "revenue": revenue,
             "checkins": checkins

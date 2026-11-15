@@ -8,7 +8,13 @@ class VenueAgent:
     def __init__(self, db):
         self.db = db
 
-    def check_venue(self, venue_id, start, end):
+    def check_venue(
+        self,
+        venue_id,
+        start,
+        end,
+        exclude_event_id=None
+    ):
         if end <= start:
             return {
                 "performative": "REFUSE",
@@ -17,19 +23,32 @@ class VenueAgent:
 
         buffer = timedelta(minutes=30)
 
-        existing_event = self.db.query(Event).filter(
+        # Check published events at this venue.
+        event_query = self.db.query(Event).filter(
             Event.venue_id == venue_id,
             Event.status == "published",
             Event.start_time < end + buffer,
             Event.end_time > start - buffer
-        ).first()
+        )
+
+        # Ignore the event currently being edited or published.
+        if exclude_event_id is not None:
+            event_query = event_query.filter(
+                Event.id != exclude_event_id
+            )
+
+        existing_event = event_query.first()
 
         if existing_event:
             return {
                 "performative": "REFUSE",
-                "reason": "Venue is already booked for an event during this time."
+                "reason": (
+                    "Venue is already booked for another event "
+                    "during this time."
+                )
             }
 
+        # Check confirmed and pending private hires.
         existing_hire = self.db.query(VenueHire).filter(
             VenueHire.venue_id == venue_id,
             VenueHire.status.in_(["confirmed", "pending_admin"]),
@@ -40,7 +59,10 @@ class VenueAgent:
         if existing_hire:
             return {
                 "performative": "REFUSE",
-                "reason": "Venue has an existing private hire request during this time."
+                "reason": (
+                    "Venue has an existing private hire "
+                    "request during this time."
+                )
             }
 
         return {
@@ -74,6 +96,7 @@ class VenueAgent:
         venue_id = content.get("venue_id")
         start = content.get("start")
         end = content.get("end")
+        exclude_event_id = content.get("exclude_event_id")
 
         if not venue_id or not start or not end:
             return {
@@ -86,11 +109,15 @@ class VenueAgent:
         try:
             start = datetime.fromisoformat(start)
             end = datetime.fromisoformat(end)
+
+            if exclude_event_id is not None:
+                exclude_event_id = int(exclude_event_id)
+
         except (ValueError, TypeError):
             return {
                 "performative": "REFUSE",
                 "content": {
-                    "reason": "Invalid date/time format."
+                    "reason": "Invalid date/time or event ID."
                 }
             }
 
@@ -104,7 +131,12 @@ class VenueAgent:
                 }
             }
 
-        result = self.check_venue(venue_id, start, end)
+        result = self.check_venue(
+            venue_id,
+            start,
+            end,
+            exclude_event_id
+        )
 
         if result["performative"] == "REFUSE":
             return {
