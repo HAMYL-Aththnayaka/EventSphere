@@ -20,7 +20,8 @@ python -m uvicorn app.main:app --reload
 ```
 
 Open `http://127.0.0.1:8000`. The app creates its tables at startup. The
-development database defaults to `eventsphere.db`.
+`.env.example` configures the local database as `eventsphere.db` through
+`DATABASE_URL`.
 
 ## Deploy on Render
 
@@ -45,7 +46,7 @@ development database defaults to `eventsphere.db`.
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Database connection. SQLite is the local default; use PostgreSQL in production. |
+| `DATABASE_URL` | Required database connection. The example uses SQLite locally; use PostgreSQL in production. |
 | `SECRET_KEY` | Session signing key. Required when `APP_ENV=production`. |
 | `ADMIN_EMAIL` | Optional first-admin email, created by `python -m app.init`. |
 | `ADMIN_PASSWORD` | First-admin password; must be at least 8 characters. |
