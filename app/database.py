@@ -1,14 +1,45 @@
 
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# SQLite database
-DATABASE_URL = "sqlite:///./eventsphere.db"
+
+# Use PostgreSQL when DATABASE_URL is configured.
+# Otherwise, use SQLite for local development.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./eventsphere.db"
+)
+
+# Use the psycopg 3 driver included in requirements.txt.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql+psycopg://",
+        1
+    )
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1
+    )
+
+
+# SQLitespecial connection argument.
+connect_args = {}
+
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    connect_args=connect_args,
+    pool_pre_ping=True
 )
+
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -16,12 +47,14 @@ SessionLocal = sessionmaker(
     bind=engine
 )
 
+
 Base = declarative_base()
 
 
 # Database session dependency
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
     finally:
