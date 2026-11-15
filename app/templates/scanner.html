@@ -1,0 +1,21 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="section scanner-section">
+  <div class="section-heading">
+    <div><span class="section-label">EVENT ENTRY</span><h2>Ticket <span>scanner.</span></h2><p>Enter a ticket code manually to validate entry.</p></div>
+  </div>
+  <form id="scanForm" class="inline-form">
+    <label class="form-field grow">
+      <span>Ticket code</span>
+      <input id="ticketCode" name="code" required placeholder="Paste ticket code">
+    </label>
+    <label class="form-field">
+      <span>Event ID</span>
+      <input id="scanEventId" name="event_id" type="number" min="1" required placeholder="Event ID">
+    </label>
+    <button class="button button-primary" type="submit">Validate ticket</button>
+  </form>
+  <div id="scanResult" class="status-message" role="status"></div>
+</section>
+{% endblock %}

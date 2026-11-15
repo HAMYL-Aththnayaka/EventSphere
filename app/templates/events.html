@@ -1,0 +1,17 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="section events-section" id="events">
+  <div class="section-heading">
+    <div><span class="section-label">FIND YOUR NEXT EXPERIENCE</span><h2>Explore what's <span>happening.</span></h2><p>Search published events and find your next experience.</p></div>
+    <span class="section-number">01 / DISCOVER</span>
+  </div>
+  <form class="search-panel" id="eventSearchForm">
+    <label class="search-field"><span class="sr-only">Search events</span><span class="search-icon">⌕</span><input id="eventSearch" type="search" placeholder="Search events, titles or descriptions"></label>
+    <label class="category-field"><span class="sr-only">Filter by category</span><select id="eventCategory"><option value="">All categories</option></select></label>
+    <button class="button button-dark" type="submit">Search events →</button>
+  </form>
+  <div id="eventStatus" class="status-message" role="status">Loading published events…</div>
+  <div class="events-grid" id="eventsGrid" aria-live="polite"></div>
+</section>
+{% endblock %}

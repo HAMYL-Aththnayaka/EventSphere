@@ -1,15 +1,16 @@
 import uuid
+from datetime import datetime, timedelta
 
-from app.models import Booking, TicketCategory
+from sqlalchemy import update
+
+from app.models import Booking, Ticket, TicketCategory, Event
 
 
 class BookingAgent:
-
     def __init__(self, db):
         self.db = db
 
     def book_ticket(self, user_id, event_id, category_id, quantity):
-
         if quantity < 1 or quantity > 6:
             return {
                 "performative": "REFUSE",
@@ -17,78 +18,184 @@ class BookingAgent:
             }
 
         category = self.db.query(TicketCategory).filter(
-            TicketCategory.id == category_id
-        ).with_for_update().first()
+            TicketCategory.id == category_id,
+            TicketCategory.event_id == event_id
+        ).first()
 
-        if not category or category.event_id != event_id:
+        if not category:
             return {
                 "performative": "REFUSE",
                 "reason": "Invalid ticket category."
             }
 
-        # Conditional update prevents overselling.
-        from sqlalchemy import update
+        price = category.price
 
-        result = self.db.execute(
-            update(TicketCategory)
-            .where(
-                TicketCategory.id == category_id,
-                TicketCategory.quantity >= quantity
+        try:
+            result = self.db.execute(
+                update(TicketCategory)
+                .where(
+                    TicketCategory.id == category_id,
+                    TicketCategory.quantity >= quantity
+                )
+                .values(
+                    quantity=TicketCategory.quantity - quantity
+                )
             )
-            .values(quantity=TicketCategory.quantity - quantity)
-        )
 
-        if result.rowcount == 0:
-            self.db.rollback()
+            if result.rowcount == 0:
+                self.db.rollback()
+                return {
+                    "performative": "REFUSE",
+                    "reason": "Not enough tickets available."
+                }
+
+            total = price * quantity
+
+            booking = Booking(
+                user_id=user_id,
+                event_id=event_id,
+                category_id=category_id,
+                quantity=quantity,
+                total=total,
+                payment_reference="SIM-" + uuid.uuid4().hex[:10],
+                status="confirmed"
+            )
+
+            self.db.add(booking)
+            self.db.commit()
+            self.db.refresh(booking)
+
             return {
-                "performative": "REFUSE",
-                "reason": "Not enough tickets available."
+                "performative": "AGREE",
+                "booking_id": booking.id,
+                "total": total,
+                "payment_reference": booking.payment_reference
             }
 
-        total = category.price * quantity
+        except Exception:
+            self.db.rollback()
+            raise
 
-        booking = Booking(
-            user_id=user_id,
-            event_id=event_id,
-            category_id=category_id,
-            quantity=quantity,
-            total=total,
-            payment_reference="SIM-" + uuid.uuid4().hex[:10],
-            status="confirmed"
-        )
+    def cancel_booking(self, booking_id, user_id):
+        booking = self.db.query(Booking).filter(
+            Booking.id == booking_id,
+            Booking.user_id == user_id
+        ).first()
 
-        self.db.add(booking)
-        self.db.commit()
-
-        return {
-            "performative": "AGREE",
-            "booking_id": booking.id,
-            "total": total,
-            "payment_reference": booking.payment_reference
-        }
-
-    def cancel_booking(self, booking, event):
+        if not booking:
+            return {
+                "performative": "REFUSE",
+                "reason": "Booking not found."
+            }
 
         if booking.status != "confirmed":
-            return {"performative": "REFUSE", "reason": "Already cancelled."}
+            return {
+                "performative": "REFUSE",
+                "reason": "This booking is not active."
+            }
 
-        from datetime import datetime, timedelta
+        event = self.db.get(Event, booking.event_id)
 
-        booking.status = "cancelled"
+        if not event:
+            return {
+                "performative": "REFUSE",
+                "reason": "Event not found."
+            }
 
-        if event.start_time > datetime.utcnow() + timedelta(hours=24):
-            refund = booking.total
+        try:
+            booking.status = "cancelled"
 
-            category = self.db.get(
-                TicketCategory, booking.category_id
+            if event.start_time > datetime.utcnow() + timedelta(hours=24):
+                refund = booking.total
+
+                category = self.db.get(
+                    TicketCategory,
+                    booking.category_id
+                )
+
+                if category:
+                    category.quantity += booking.quantity
+            else:
+                refund = 0
+
+            tickets = self.db.query(Ticket).filter(
+                Ticket.booking_id == booking.id
+            ).all()
+
+            for ticket in tickets:
+                ticket.status = "cancelled"
+
+            self.db.commit()
+
+            return {
+                "performative": "INFORM",
+                "content": {
+                    "booking_id": booking.id,
+                    "status": booking.status,
+                    "refund": refund,
+                    "message": (
+                        "Booking cancelled. Full refund approved."
+                        if refund > 0
+                        else "Booking cancelled. No refund is available within 24 hours of the event."
+                    )
+                }
+            }
+
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def handle_message(self, agent_message):
+        if agent_message["performative"] != "REQUEST":
+            return {
+                "performative": "REFUSE",
+                "content": {
+                    "reason": "BookingAgent requires REQUEST messages."
+                }
+            }
+
+        content = agent_message["content"]
+        action = content.get("action")
+
+        if action == "CANCEL_BOOKING":
+            if "booking_id" not in content or "user_id" not in content:
+                return {
+                    "performative": "REFUSE",
+                    "content": {
+                        "reason": "Missing cancellation information."
+                    }
+                }
+
+            return self.cancel_booking(
+                booking_id=content["booking_id"],
+                user_id=content["user_id"]
             )
-            category.quantity += booking.quantity
-        else:
-            refund = 0
 
-        self.db.commit()
+        required = [
+            "user_id",
+            "event_id",
+            "category_id",
+            "quantity"
+        ]
+
+        if any(field not in content for field in required):
+            return {
+                "performative": "REFUSE",
+                "content": {
+                    "reason": "Missing booking information."
+                }
+            }
+
+        result = self.book_ticket(
+            user_id=content["user_id"],
+            event_id=content["event_id"],
+            category_id=content["category_id"],
+            quantity=content["quantity"]
+        )
+
+        performative = result.pop("performative")
 
         return {
-            "performative": "INFORM",
-            "refund": refund
+            "performative": performative,
+            "content": result
         }

@@ -1,65 +1,311 @@
-def test_booking_quantity_limit():
-    quantity = 7
 
-    assert quantity > 6
+import pytest
+from datetime import datetime, timedelta
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-def test_ticket_code_is_unique():
-    codes = ["ABC123", "XYZ456"]
-
-    assert len(codes) == len(set(codes))
-
-
-def test_venue_time():
-    start = 10
-    end = 12
-
-    assert end > start
-
-
-def test_ticket_status():
-    status = "valid"
-
-    assert status == "valid"
+from app.database import Base
+from app.models import (
+    User,
+    Venue,
+    Event,
+    TicketCategory,
+    Booking,
+    Ticket,
+    Waitlist,
+    Notification,
+    AgentMessage
+)
+from app.agents.agent_system import AgentSystem
 
 
-def test_waitlist_status():
-    status = "waiting"
+@pytest.fixture
+def db():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
 
-    assert status == "waiting"
+    Base.metadata.create_all(bind=engine)
 
+    TestingSession = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine
+    )
 
-def test_notification_message():
-    message = "Your booking is confirmed"
+    session = TestingSession()
 
-    assert len(message) > 0
+    yield session
 
-
-def test_refund_policy():
-    booking_total = 1000
-    refund = booking_total
-
-    assert refund == 1000
-
-
-def test_booking_limit():
-    assert 6 <= 6
-
-
-def test_performatives():
-    valid = [
-        "REQUEST",
-        "AGREE",
-        "REFUSE",
-        "PROPOSE",
-        "INFORM",
-        "FAILURE"
-    ]
-
-    assert len(valid) == 6
+    session.close()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
-def test_simulated_payment():
-    reference = "SIM-123456"
+@pytest.fixture
+def event_data(db):
+    user = User(
+        name="Test User",
+        email="test@example.com",
+        password="test-password",
+        role="attendee"
+    )
 
-    assert reference.startswith("SIM-")
+    venue = Venue(
+        name="Test Venue",
+        location="Test Location",
+        capacity=100,
+        hourly_rate=500,
+        private_hire=True
+    )
+
+    db.add_all([user, venue])
+    db.commit()
+    db.refresh(user)
+    db.refresh(venue)
+
+    now = datetime.utcnow()
+
+    event = Event(
+        title="Test Event",
+        category="Technology",
+        venue_id=venue.id,
+        start_time=now - timedelta(hours=1),
+        end_time=now + timedelta(hours=2),
+        description="Integration test event",
+        status="published"
+    )
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    category = TicketCategory(
+        event_id=event.id,
+        name="General",
+        price=1000,
+        quantity=10
+    )
+
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+
+    return {
+        "user": user,
+        "venue": venue,
+        "event": event,
+        "category": category
+    }
+
+
+def test_booking_creates_tickets_and_notification(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    response = system.book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        2
+    )
+
+    assert response["performative"] == "AGREE"
+    assert db.query(Booking).count() == 1
+    assert db.query(Ticket).count() == 2
+    assert db.query(Notification).count() == 1
+
+    db.refresh(data["category"])
+    assert data["category"].quantity == 8
+
+
+def test_booking_prevents_overselling(db, event_data):
+    data = event_data
+    data["category"].quantity = 2
+    db.commit()
+
+    response = AgentSystem(db).book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        3
+    )
+
+    assert response["performative"] == "REFUSE"
+    assert db.query(Booking).count() == 0
+
+
+def test_booking_quantity_limit(db, event_data):
+    data = event_data
+
+    response = AgentSystem(db).book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        7
+    )
+
+    assert response["performative"] == "REFUSE"
+
+
+def test_invalid_ticket_category(db, event_data):
+    data = event_data
+
+    response = AgentSystem(db).book_tickets(
+        data["user"].id,
+        data["event"].id,
+        99999,
+        1
+    )
+
+    assert response["performative"] == "REFUSE"
+
+
+def test_ticket_scan_admits_only_once(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    booking = system.book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        1
+    )
+
+    code = booking["content"]["tickets"][0]["code"]
+
+    first_scan = system.bus.communicate(
+        sender="EventSphere",
+        receiver="TicketAgent",
+        performative="REQUEST",
+        content={
+            "action": "SCAN_TICKET",
+            "code": code,
+            "event_id": data["event"].id
+        }
+    )
+
+    second_scan = system.bus.communicate(
+        sender="EventSphere",
+        receiver="TicketAgent",
+        performative="REQUEST",
+        content={
+            "action": "SCAN_TICKET",
+            "code": code,
+            "event_id": data["event"].id
+        }
+    )
+
+    assert first_scan["performative"] == "AGREE"
+    assert second_scan["performative"] == "REFUSE"
+
+
+def test_ticket_rejects_wrong_event(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    booking = system.book_tickets(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id,
+        1
+    )
+
+    code = booking["content"]["tickets"][0]["code"]
+
+    response = system.bus.communicate(
+        sender="EventSphere",
+        receiver="TicketAgent",
+        performative="REQUEST",
+        content={
+            "action": "SCAN_TICKET",
+            "code": code,
+            "event_id": data["event"].id + 999
+        }
+    )
+
+    assert response["performative"] == "REFUSE"
+
+
+def test_waitlist_join(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    response = system.join_waitlist(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id
+    )
+
+    assert response["performative"] == "AGREE"
+    assert db.query(Waitlist).count() == 1
+
+
+def test_waitlist_prevents_duplicate_entries(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    first = system.join_waitlist(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id
+    )
+
+    second = system.join_waitlist(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id
+    )
+
+    assert first["performative"] == "AGREE"
+    assert second["performative"] == "AGREE"
+    assert first["content"]["waitlist_id"] == second["content"]["waitlist_id"]
+    assert db.query(Waitlist).count() == 1
+
+
+def test_venue_agent_detects_conflict(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    response = system.check_venue(
+        data["venue"].id,
+        data["event"].start_time,
+        data["event"].end_time
+    )
+
+    assert response["performative"] == "REFUSE"
+
+
+def test_venue_agent_accepts_available_venue(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    response = system.check_venue(
+        data["venue"].id,
+        data["event"].end_time + timedelta(days=1),
+        data["event"].end_time + timedelta(days=1, hours=2)
+    )
+
+    assert response["performative"] == "AGREE"
+    assert response["content"]["estimated_price"] == 1000
+
+
+def test_agent_messages_are_logged(db, event_data):
+    data = event_data
+    system = AgentSystem(db)
+
+    system.join_waitlist(
+        data["user"].id,
+        data["event"].id,
+        data["category"].id
+    )
+
+    messages = db.query(AgentMessage).all()
+
+    assert len(messages) >= 2
+    assert any(message.receiver == "WaitlistAgent" for message in messages)
+    assert any(message.sender == "WaitlistAgent" for message in messages)

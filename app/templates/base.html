@@ -1,0 +1,238 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Discover events, book tickets and find the perfect venue with EventSphere.">
+  <meta name="theme-color" content="#17263c">
+
+  <title>{% block title %}{{ page_title or "EventSphere | Discover. Experience. Remember." }}{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+
+<!-- NAVIGATION -->
+<header class="navbar">
+
+  <a href="/" class="brand" aria-label="EventSphere home">
+    <span class="brand-icon">E</span>
+    <span>Event<span class="brand-highlight">Sphere</span></span>
+  </a>
+
+  <button
+    class="menu-toggle"
+    id="menuToggle"
+    type="button"
+    aria-label="Open navigation menu"
+    aria-expanded="false"
+  >
+    ☰
+  </button>
+
+  <nav class="nav-links" id="navLinks">
+
+    <a href="/events-page">Discover</a>
+
+    <a href="/#how-it-works">How it works</a>
+
+    <a href="/venue-hire">Venue hire</a>
+
+    <a href="/my-bookings" id="myBookingsNav" hidden>
+      My bookings
+    </a>
+
+    <a href="/dashboard" id="adminNav" hidden>
+      Dashboard
+    </a>
+
+    <a href="/scanner-page" id="scannerNav" hidden>
+      Ticket scanner
+    </a>
+
+  </nav>
+
+  <div class="nav-account">
+
+    <span id="navUser" class="nav-user" aria-live="polite">
+      Guest
+    </span>
+
+    <button class="nav-cta" id="authOpenBtn" type="button">
+      Sign in <span>↗</span>
+    </button>
+
+    <button class="nav-logout" id="logoutBtn" type="button" hidden>
+      Sign out
+    </button>
+
+  </div>
+
+</header>
+
+<!-- PAGE CONTENT -->
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<!-- FOOTER -->
+<footer class="footer">
+
+  <a href="/" class="brand footer-brand">
+    <span class="brand-icon">E</span>
+    <span>Event<span class="brand-highlight">Sphere</span></span>
+  </a>
+
+  <p>Making meaningful experiences easier to discover.</p>
+
+  <div class="footer-bottom">
+    <span>© <span id="currentYear"></span> EventSphere</span>
+    <span>Discover. Experience. Remember.</span>
+  </div>
+
+</footer>
+
+<!-- AUTHENTICATION MODAL -->
+<div class="modal-backdrop" id="authModal" hidden>
+
+  <section
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="authTitle"
+  >
+
+    <button
+      class="modal-close"
+      type="button"
+      data-close="authModal"
+      aria-label="Close"
+    >
+      ×
+    </button>
+
+    <span class="section-label">WELCOME TO EVENTSPHERE</span>
+
+    <h2 id="authTitle">
+      Your next experience <span>awaits.</span>
+    </h2>
+
+    <div class="tabs">
+
+      <button
+        type="button"
+        class="tab active"
+        data-auth-tab="login"
+      >
+        Sign in
+      </button>
+
+      <button
+        type="button"
+        class="tab"
+        data-auth-tab="register"
+      >
+        Create account
+      </button>
+
+    </div>
+
+    <!-- LOGIN -->
+    <form id="loginForm" class="stack-form">
+
+      <label class="form-field">
+        <span>Email address</span>
+        <input
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+        >
+      </label>
+
+      <label class="form-field">
+        <span>Password</span>
+        <input
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        >
+      </label>
+
+      <button class="button button-primary full-width" type="submit">
+        Sign in
+      </button>
+
+    </form>
+
+    <!-- REGISTER -->
+    <form id="registerForm" class="stack-form" hidden>
+
+      <label class="form-field">
+        <span>Your name</span>
+        <input
+          name="name"
+          autocomplete="name"
+          required
+          maxlength="100"
+        >
+      </label>
+
+      <label class="form-field">
+        <span>Email address</span>
+        <input
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+        >
+      </label>
+
+      <label class="form-field">
+        <span>Password</span>
+        <input
+          name="password"
+          type="password"
+          autocomplete="new-password"
+          minlength="8"
+          required
+        >
+      </label>
+
+      <button class="button button-primary full-width" type="submit">
+        Create attendee account
+      </button>
+
+      <p class="form-hint">
+        New registrations receive the attendee role.
+        Staff and admin access is assigned by an administrator.
+      </p>
+
+    </form>
+
+    <div id="authStatus" class="status-message" role="status"></div>
+
+  </section>
+
+</div>
+
+<!-- GLOBAL TOAST -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- GLOBAL JAVASCRIPT -->
+<script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
+
+{% block extra_scripts %}{% endblock %}
+
+</body>
+</html>
